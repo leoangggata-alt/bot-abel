@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "kode": "P001",
+    "nama": "gemini pro 18bulan",
+    "harga": 70000,
+    "stok": 7,
+    "kategori": "gemini",
+    "deskripsi": "Instruksi:\nBuka link dan claim,  Scroll untuk melihat durasi, untuk ganti akun bisa lihat di pojok kanan atas.",
+    "gambar": "",
+    "aktif": true
+  },
+  {
+    "id": 2,
+    "kode": "P002",
+    "nama": "chatgpt plus 1bulan",
+    "harga": 60000,
+    "stok": 3,
+    "kategori": "gpt",
+    "deskripsi": "Instruksi:\nCARA LOGIN CHATGPT (WEB)\n\n1. Login menggunakan email, lalu masukkan email akun.\n2. Jika diminta memasukkan password, masukkan password yang diberikan.\n3. Jika diminta memasukkan OTP, salin kode 2FA lalu buka 2fa.cn. Tempel kode tersebut di sana, kemudian klik Submit. Setelah itu akan muncul kode 6 digit paling belakang. Kode tersebut adalah OTP. Salin lalu masukkan ke halaman login ChatGPT.",
+    "gambar": "",
+    "aktif": true
+  },
+  {
+    "id": 3,
+    "kode": "P003",
+    "nama": "leonardo ai 8500",
+    "harga": 7000,
+    "stok": 200,
+    "kategori": "leo",
+    "deskripsi": "login lewat email",
+    "gambar": "",
+    "aktif": true
+  }
+]

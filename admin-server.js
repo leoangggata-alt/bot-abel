@@ -1,0 +1,157 @@
+// ============================================================
+//  admin-server.js - Server Admin Panel Bot Abel
+//  Jalankan: node admin-server.js
+//  Buka: http://localhost:8080
+// ============================================================
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+const PORT = 8080;
+const DATA_FILE     = path.join(__dirname, "data", "products.json");
+const ORDERS_FILE   = path.join(__dirname, "data", "orders.json");
+const SETTINGS_FILE = path.join(__dirname, "data", "settings.json");
+const TUNNEL_LOG    = path.join(__dirname, "logs", "tunnel.log");
+const TUNNEL_URL_FILE = path.join(__dirname, "logs", "admin-url.txt");
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// ── Baca URL tunnel Cloudflare ────────────────────────────────
+function getTunnelUrl() {
+  // Coba dari file cache dulu
+  if (fs.existsSync(TUNNEL_URL_FILE)) {
+    const url = fs.readFileSync(TUNNEL_URL_FILE, "utf-8").trim();
+    if (url) return url;
+  }
+  // Coba parse dari log cloudflared
+  if (fs.existsSync(TUNNEL_LOG)) {
+    const log = fs.readFileSync(TUNNEL_LOG, "utf-8");
+    const match = log.match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/);
+    if (match) return match[0];
+  }
+  return null;
+}
+
+// API: get tunnel URL
+app.get("/api/tunnel-url", (req, res) => {
+  const url = getTunnelUrl();
+  res.json({ url, localUrl: `http://localhost:${PORT}` });
+});
+
+
+// ── Helper baca/tulis data ────────────────────────────────────
+function readProducts() {
+  if (!fs.existsSync(DATA_FILE)) return [];
+  return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+}
+function saveProducts(data) {
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+function readOrders() {
+  if (!fs.existsSync(ORDERS_FILE)) return [];
+  try { return JSON.parse(fs.readFileSync(ORDERS_FILE, "utf-8")); } catch { return []; }
+}
+function saveOrders(data) {
+  fs.mkdirSync(path.dirname(ORDERS_FILE), { recursive: true });
+  fs.writeFileSync(ORDERS_FILE, JSON.stringify(data, null, 2));
+}
+function readSettings() {
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    return { businessName: "Bot Abel", ownerName: "Admin", ownerNumber: "", welcomeMsg: "" };
+  }
+  return JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8"));
+}
+function saveSettings(data) {
+  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+}
+
+// ── API Produk ────────────────────────────────────────────────
+// GET semua produk
+app.get("/api/products", (req, res) => {
+  res.json(readProducts());
+});
+
+// POST tambah produk baru
+app.post("/api/products", (req, res) => {
+  const products = readProducts();
+  const newId = products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1;
+  // Auto-generate kode jika kosong
+  const kode = req.body.kode || `P${String(newId).padStart(3, "0")}`;
+  const produk = { id: newId, kode, aktif: true, ...req.body, kode };
+  products.push(produk);
+  saveProducts(products);
+  res.json({ success: true, produk });
+});
+
+// PUT update produk (termasuk kode)
+app.put("/api/products/:id", (req, res) => {
+  const products = readProducts();
+  const idx = products.findIndex(p => p.id === parseInt(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: "Produk tidak ditemukan" });
+  products[idx] = { ...products[idx], ...req.body };
+  saveProducts(products);
+  res.json({ success: true, produk: products[idx] });
+});
+
+// DELETE hapus produk
+app.delete("/api/products/:id", (req, res) => {
+  const products = readProducts();
+  const filtered = products.filter(p => p.id !== parseInt(req.params.id));
+  saveProducts(filtered);
+  res.json({ success: true });
+});
+
+// ── API Settings ──────────────────────────────────────────────
+app.get("/api/settings", (req, res) => res.json(readSettings()));
+app.post("/api/settings", (req, res) => {
+  saveSettings(req.body);
+  res.json({ success: true });
+});
+
+// ── API Orders ─────────────────────────────────────────────
+app.get("/api/orders", (req, res) => res.json(readOrders().reverse()));
+app.put("/api/orders/:noOrder", (req, res) => {
+  const orders = readOrders();
+  const idx = orders.findIndex(o => o.noOrder === req.params.noOrder);
+  if (idx === -1) return res.status(404).json({ error: "Order tidak ditemukan" });
+  orders[idx] = { ...orders[idx], ...req.body };
+  saveOrders(orders);
+  res.json({ success: true, order: orders[idx] });
+});
+
+// ── API Stats ─────────────────────────────────────────────────
+app.get("/api/stats", (req, res) => {
+  const products = readProducts();
+  const orders = readOrders();
+  const pendapatan = orders
+    .filter(o => o.status === "Selesai")
+    .reduce((a, b) => a + (b.total || 0), 0);
+  res.json({
+    totalProduk: products.length,
+    produkAktif: products.filter(p => p.aktif).length,
+    totalStok: products.reduce((a, b) => a + (b.stok || 0), 0),
+    kategori: [...new Set(products.map(p => p.kategori))].length,
+    totalOrder: orders.length,
+    orderBaru: orders.filter(o => o.status === "Menunggu Konfirmasi").length,
+    pendapatan,
+  });
+});
+
+// Serve admin panel
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+app.listen(PORT, () => {
+  console.log(`\n╔══════════════════════════════════════╗`);
+  console.log(`║  🛠️  Admin Panel Bot Abel             ║`);
+  console.log(`║  🌐 http://localhost:${PORT}           ║`);
+  console.log(`║  📦 Data: data/products.json          ║`);
+  console.log(`╚══════════════════════════════════════╝\n`);
+});

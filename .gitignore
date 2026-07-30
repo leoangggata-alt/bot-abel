@@ -1,0 +1,10 @@
+# Jangan upload ke GitHub
+node_modules/
+session/
+.env
+logs/
+data/orders.json
+
+# Tapi upload produk & assets
+!data/products.json
+!assets/
