@@ -18,6 +18,7 @@ import dotenv from "dotenv";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { handleMessage, handleGroupUpdate } from "./src/handler.js";
+import { getApiKeyCandidates } from "./src/api-key-store.js";
 
 dotenv.config();
 
@@ -160,7 +161,12 @@ async function connectToWhatsApp() {
       console.log("╚══════════════════════════════════════╝");
       console.log("\n🟢 Abel siap menerima pesan!");
       console.log(`📌 Prefix: ${botPrefix}`);
-      console.log(`🤖 AI: ${process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY ? "✅ Aktif" : "❌ Belum diset"}`);
+      const openaiKeys = getApiKeyCandidates("openai").length;
+      const groqKeys = getApiKeyCandidates("groq").length;
+      const geminiKeys = getApiKeyCandidates("gemini").length;
+      console.log(`🤖 AI utama (OpenAI): ${openaiKeys ? `✅ ${openaiKeys} key aktif` : "❌ Belum diset"}`);
+      console.log(`🧠 AI cadangan (Groq): ${groqKeys ? `✅ ${groqKeys} key aktif` : "❌ Belum diset"}`);
+      console.log(`💠 AI cadangan (Gemini): ${geminiKeys ? `✅ ${geminiKeys} key aktif` : "❌ Belum diset"}`);
       console.log("⏹️  Ctrl+C untuk stop\n");
     }
   });

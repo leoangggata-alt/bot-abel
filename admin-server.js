@@ -9,6 +9,12 @@ import path from "path";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
+import {
+  addApiKey,
+  deleteApiKey,
+  listApiKeys,
+  updateApiKey,
+} from "./src/api-key-store.js";
 
 dotenv.config();
 
@@ -164,6 +170,40 @@ app.get("/api/settings", (req, res) => res.json(readSettings()));
 app.post("/api/settings", (req, res) => {
   saveSettings(req.body);
   res.json({ success: true });
+});
+
+// ── API Key Pool ─────────────────────────────────────────────
+app.get("/api/api-keys", (req, res) => {
+  // Key lengkap hanya boleh keluar saat panel benar-benar dilindungi password.
+  const reveal = Boolean(ADMIN_PASSWORD) && req.query.reveal === "true";
+  res.json(listApiKeys({ reveal }));
+});
+
+app.post("/api/api-keys/:provider", (req, res) => {
+  try {
+    const key = addApiKey(req.params.provider, req.body);
+    res.status(201).json({ success: true, key });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+app.put("/api/api-keys/:provider/:id", (req, res) => {
+  try {
+    const key = updateApiKey(req.params.provider, req.params.id, req.body);
+    res.json({ success: true, key });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/api-keys/:provider/:id", (req, res) => {
+  try {
+    deleteApiKey(req.params.provider, req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
 });
 
 // ── API Orders ─────────────────────────────────────────────

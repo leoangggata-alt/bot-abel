@@ -26,6 +26,23 @@ const AUTO_TYPING = process.env.AUTO_TYPING !== "false";
 const ANTI_SPAM = process.env.ANTI_SPAM !== "false";
 const AI_IN_GROUP = process.env.AI_IN_GROUP !== "false";
 
+// Ambil deskripsi dari bahasa natural tanpa salah menangkap permintaan "prompt gambar".
+export function ambilPromptGambar(teks = "") {
+  const nilai = teks.trim();
+  if (!nilai || /\bprompt\b/i.test(nilai)) return "";
+
+  const pola = [
+    /^(?:tolong\s+)?(?:buat(?:kan)?|bikin(?:kan)?|ciptakan|generate)\s+(?:saya\s+)?(?:sebuah\s+)?(?:gambar|image|foto)(?:\s+(?:tentang|berupa|dengan tema))?\s+(.+)$/i,
+    /^(?:tolong\s+)?(?:gambar(?:kan)?|image|foto)\s+(.+)$/i,
+  ];
+
+  for (const regex of pola) {
+    const cocok = nilai.match(regex);
+    if (cocok?.[1]?.trim()) return cocok[1].trim();
+  }
+  return "";
+}
+
 // ── Handler Utama ────────────────────────────────────────────
 export async function handleMessage(sock, msg) {
   try {
@@ -108,6 +125,15 @@ export async function handleMessage(sock, msg) {
       }
     }
 
+    // Kalimat natural seperti "buatkan gambar kucing" langsung ke generator gambar.
+    if (!isGrup) {
+      const promptGambar = ambilPromptGambar(trimTeks);
+      if (promptGambar) {
+        await kirimGambar(sock, from, promptGambar);
+        return;
+      }
+    }
+
     // ── PERSONAL CHAT: semua pesan langsung ke AI (seperti ChatGPT) ──
     if (!isGrup) {
       const balasan = await chatAI(senderId, trimTeks);
@@ -132,6 +158,18 @@ export async function handleMessage(sock, msg) {
           .replace(/@\d+/g, "")
           .replace(/^abel\s*/i, "")
           .trim();
+
+        const promptGambar = ambilPromptGambar(pesanBersih);
+        if (promptGambar) {
+          await kirimGambar(
+            sock,
+            from,
+            promptGambar,
+            `@${senderNum} 🎨 Ini gambarnya!`
+          );
+          return;
+        }
+
         const balasan = await chatAI(senderId, pesanBersih || "halo");
         await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
         return;
@@ -181,7 +219,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     }
 
     case "harga": {
-      // Kirim banner image + price list premium
+      // Satu pesan saja: banner + price list. QRIS hanya dikirim sesudah order.
       const txtHarga = infoHarga();
       try {
         if (fs.existsSync(BANNER_FILE)) {
@@ -287,8 +325,13 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       if (!sisa) {
         await kirim(sock, from, `🤖 Langsung ketik pertanyaan atau kebutuhanmu!\n\nContoh tanpa prefix:\n_buatkan prompt gambar sunset_\n_jelaskan apa itu AI_\n_buat caption instagram_\n\nAtau pakai: *${PREFIX}ai [pertanyaan]*`);
       } else {
-        const balasan = await chatAI(senderId, sisa);
-        await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
+        const promptGambar = ambilPromptGambar(sisa);
+        if (promptGambar) {
+          await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
+        } else {
+          const balasan = await chatAI(senderId, sisa);
+          await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
+        }
       }
       break;
 
@@ -296,11 +339,19 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     case "prompt":
     case "buat":
     case "buatkan":
+    case "bikin":
+    case "bikinkan":
+    case "ciptakan":
     case "generate": {
-      const topik = sisa || "gambar kreatif";
-      const promptReq = `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
-      const balasan = await chatAI(senderId, promptReq);
-      await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
+      const promptGambar = ambilPromptGambar(`${cmd} ${sisa}`);
+      if (promptGambar) {
+        await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
+      } else {
+        const topik = sisa || "gambar kreatif";
+        const promptReq = `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
+        const balasan = await chatAI(senderId, promptReq);
+        await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
+      }
       break;
     }
 
@@ -318,7 +369,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
           `• !gambar mobil sport merah di jalan kota\n` +
           `• !gambar pemandangan pantai bali saat sunset\n` +
           `• !gambar kucing lucu memakai topi\n\n` +
-          `_⏳ Proses 10-30 detik_`
+          `_Powered by GPT Image 2 • proses dapat memerlukan beberapa saat_`
         );
       } else {
         await kirimGambar(sock, from, sisa, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");

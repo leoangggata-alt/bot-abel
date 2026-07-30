@@ -1,10 +1,18 @@
 # Jangan upload ke GitHub
 node_modules/
 session/
+session-loggedout-*/
 .env
 logs/
+.pm2-local/
 data/orders.json
+data/settings.json
+data/products.json
+data/api-keys.json
+data/.api-key-secret
+qrcode.png
+bot-runtime.tar.gz
 
-# Tapi upload produk & assets
-!data/products.json
+# Upload data awal dan aset saja
+!data/products.example.json
 !assets/

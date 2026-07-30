@@ -1,13 +1,13 @@
 // ============================================================
-//  src/ai.js - AI via Groq (GRATIS, cepat, 6000 req/hari)
-//  Model: Llama 3.1 70B / Gemma 2 9B / Mixtral 8x7B
+//  src/ai.js - OpenAI sebagai otak utama, Groq sebagai cadangan
 // ============================================================
 import https from "https";
+import crypto from "crypto";
 import dotenv from "dotenv";
+import { getApiKeyCandidates } from "./api-key-store.js";
 dotenv.config();
 
-const GROQ_KEY = process.env.GROQ_API_KEY || "";
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
+const OPENAI_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-5.6-sol";
 
 // Memori percakapan per user
 const history = {};
@@ -74,7 +74,7 @@ Quality: high quality, 4K, detailed"
 
 
 // ── HTTP Request Helper ──────────────────────────────────────
-function httpPost(hostname, path, headers, body) {
+function httpPost(hostname, path, headers, body, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const options = {
@@ -102,13 +102,110 @@ function httpPost(hostname, path, headers, body) {
     });
 
     req.on("error", reject);
-    req.setTimeout(20000, () => { req.destroy(); reject(new Error("Timeout")); });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error("Timeout"));
+    });
     req.write(bodyStr);
     req.end();
   });
 }
 
-// ── Groq API (primary - GRATIS) ──────────────────────────────
+// ── OpenAI Responses API (otak utama) ───────────────────────
+function ambilTeksOpenAI(json) {
+  if (typeof json.output_text === "string" && json.output_text.trim()) {
+    return json.output_text.trim();
+  }
+
+  const teks = (json.output || [])
+    .flatMap(item => item.content || [])
+    .filter(item => item.type === "output_text" && item.text)
+    .map(item => item.text)
+    .join("\n")
+    .trim();
+
+  return teks || "";
+}
+
+function bolehPakaiCadangan(status, code = "") {
+  return status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status >= 500 ||
+    [
+      "rate_limit_exceeded",
+      "insufficient_quota",
+      "credit_balance_exhausted",
+    ].includes(code);
+}
+
+function errorKeyAtauLimit(status, code = "", message = "") {
+  return bolehPakaiCadangan(status, code) ||
+    status === 401 ||
+    status === 403 ||
+    /billing|credit|quota|hard limit|api key/i.test(message);
+}
+
+async function callOpenAI(messages, userId) {
+  const candidates = getApiKeyCandidates("openai");
+  if (candidates.length === 0) {
+    const error = new Error("OPENAI_API_KEY tidak diset");
+    error.pakaiCadangan = true;
+    throw error;
+  }
+
+  let lastError;
+  for (const [index, candidate] of candidates.entries()) {
+    let response;
+    try {
+      response = await httpPost(
+        "api.openai.com",
+        "/v1/responses",
+        { Authorization: `Bearer ${candidate.key}` },
+        {
+          model: OPENAI_MODEL,
+          instructions: SYSTEM_PROMPT,
+          input: messages,
+          max_output_tokens: 800,
+          reasoning: { effort: "low" },
+          text: { verbosity: "low" },
+          store: false,
+          safety_identifier: crypto
+            .createHash("sha256")
+            .update(String(userId))
+            .digest("hex"),
+        },
+        45000
+      );
+    } catch (error) {
+      lastError = error;
+      console.warn(`[AI] OpenAI slot ${index + 1} gangguan jaringan`);
+      continue;
+    }
+
+    const { status, json } = response;
+    const teks = ambilTeksOpenAI(json);
+    if (status === 200 && teks) {
+      console.log(`[AI] ✅ OpenAI/${OPENAI_MODEL} (slot ${index + 1})`);
+      return teks;
+    }
+
+    const message = json.error?.message || `HTTP ${status}`;
+    const error = new Error(message);
+    error.status = status;
+    error.code = json.error?.code || "";
+    lastError = error;
+
+    if (!errorKeyAtauLimit(status, error.code, message)) throw error;
+    console.warn(`[AI] OpenAI slot ${index + 1} limit/tidak valid, mencoba slot berikutnya...`);
+  }
+
+  lastError ||= new Error("Semua key OpenAI gagal");
+  lastError.pakaiCadangan = true;
+  throw lastError;
+}
+
+// ── Groq API (otak kedua / cadangan) ────────────────────────
 const GROQ_MODELS = [
   "llama-3.1-8b-instant",
   "llama3-70b-8192",
@@ -117,63 +214,78 @@ const GROQ_MODELS = [
 ];
 
 async function callGroq(messages) {
-  if (!GROQ_KEY) throw new Error("GROQ_API_KEY tidak diset");
+  const candidates = getApiKeyCandidates("groq");
+  if (candidates.length === 0) throw new Error("GROQ_API_KEY tidak diset");
 
-  for (const model of GROQ_MODELS) {
-    try {
-      const { status, json } = await httpPost(
-        "api.groq.com",
-        "/openai/v1/chat/completions",
-        { Authorization: `Bearer ${GROQ_KEY}` },
-        {
-          model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            ...messages,
-          ],
-          max_tokens: 800,
-          temperature: 0.85,
+  for (const [keyIndex, candidate] of candidates.entries()) {
+    for (const model of GROQ_MODELS) {
+      try {
+        const { status, json } = await httpPost(
+          "api.groq.com",
+          "/openai/v1/chat/completions",
+          { Authorization: `Bearer ${candidate.key}` },
+          {
+            model,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              ...messages,
+            ],
+            max_tokens: 800,
+            temperature: 0.85,
+          }
+        );
+
+        if (status === 200 && json.choices?.[0]?.message?.content) {
+          console.log(`[AI] ✅ Groq/${model} (slot ${keyIndex + 1})`);
+          return json.choices[0].message.content.trim();
         }
-      );
 
-      if (status === 200 && json.choices?.[0]?.message?.content) {
-        console.log(`[AI] ✅ Groq/${model}`);
-        return json.choices[0].message.content.trim();
+        const message = json.error?.message || `HTTP ${status}`;
+        console.log(`[AI] ⚠️ Groq/${model}: ${message.slice(0, 60)}`);
+        if (errorKeyAtauLimit(status, json.error?.code, message)) break;
+      } catch (error) {
+        console.log(`[AI] ⚠️ Groq/${model}: ${error.message.slice(0, 60)}`);
+        break;
       }
-      throw new Error(json.error?.message || `HTTP ${status}`);
-    } catch (e) {
-      console.log(`[AI] ⚠️ Groq/${model}: ${e.message.slice(0, 60)}`);
     }
   }
   throw new Error("Groq gagal");
 }
 
-// ── Gemini API (fallback) ────────────────────────────────────
+// ── Gemini API (cadangan terakhir bila key tersedia) ─────────
 async function callGemini(messages) {
-  if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY tidak diset");
+  const candidates = getApiKeyCandidates("gemini");
+  if (candidates.length === 0) throw new Error("GEMINI_API_KEY tidak diset");
 
-  const contents = messages.map(m => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
+  const contents = messages.map(message => ({
+    role: message.role === "assistant" ? "model" : "user",
+    parts: [{ text: message.content }],
   }));
 
-  const { status, json } = await httpPost(
-    "generativelanguage.googleapis.com",
-    `/v1beta/models/gemini-2.0-flash-lite-001:generateContent?key=${GEMINI_KEY}`,
-    {},
-    {
-      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents,
-      generationConfig: { maxOutputTokens: 800, temperature: 0.85 },
-    }
-  );
+  for (const [index, candidate] of candidates.entries()) {
+    try {
+      const { status, json } = await httpPost(
+        "generativelanguage.googleapis.com",
+        `/v1beta/models/gemini-2.0-flash-lite-001:generateContent?key=${encodeURIComponent(candidate.key)}`,
+        {},
+        {
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents,
+          generationConfig: { maxOutputTokens: 800, temperature: 0.85 },
+        }
+      );
 
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (status === 200 && text) {
-    console.log("[AI] ✅ Gemini fallback");
-    return text.trim();
+      const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (status === 200 && text) {
+        console.log(`[AI] ✅ Gemini (slot ${index + 1})`);
+        return text.trim();
+      }
+      console.warn(`[AI] Gemini slot ${index + 1} gagal (HTTP ${status})`);
+    } catch (error) {
+      console.warn(`[AI] Gemini slot ${index + 1}: ${error.message.slice(0, 60)}`);
+    }
   }
-  throw new Error(json.error?.message || `HTTP ${status}`);
+  throw new Error("Gemini gagal");
 }
 
 // ── Chat dengan memori percakapan ────────────────────────────
@@ -187,13 +299,23 @@ export async function chatAI(userId, pesan) {
       { role: "user", content: pesan },
     ];
 
-    // Coba Groq dulu, fallback ke Gemini
+    // Selalu pakai OpenAI terlebih dahulu. Groq hanya untuk kuota/gangguan.
     let balasan;
     try {
-      balasan = await callGroq(messages);
-    } catch {
-      console.log("[AI] Groq gagal, coba Gemini...");
-      balasan = await callGemini(messages);
+      balasan = await callOpenAI(messages, userId);
+    } catch (error) {
+      if (!error.pakaiCadangan) throw error;
+
+      console.warn(
+        `[AI] OpenAI tidak tersedia (${error.code || error.status || error.message}), ` +
+        "beralih ke Groq..."
+      );
+      try {
+        balasan = await callGroq(messages);
+      } catch {
+        console.warn("[AI] Semua key Groq gagal, mencoba Gemini...");
+        balasan = await callGemini(messages);
+      }
     }
 
     // Simpan ke history

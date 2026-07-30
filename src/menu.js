@@ -15,6 +15,7 @@ const PREFIX =
   process.env.BOT_PREFIX ||
   (process.env.PREFIX?.length <= 3 ? process.env.PREFIX : "!");
 const BISNIS = process.env.BUSINESS_NAME || "Abel-Lab";
+const STORE_NAME = process.env.STORE_NAME || "ABEL-LAB";
 
 // ── Baca produk dari file JSON ────────────────────────────────
 function bacaProduk() {
@@ -58,6 +59,7 @@ Berikut daftar perintah yang tersedia:
 ├ ${PREFIX}cs - Hubungi customer service
 ├ ${PREFIX}faq - Pertanyaan umum
 ├ ${PREFIX}ai [pesan] - Tanya AI kami
+├ ${PREFIX}gambar [deskripsi] - Buat gambar GPT
 └ ${PREFIX}reset - Reset percakapan AI
 
 ${isGrup ? `*👥 FITUR GRUP*\n├ ${PREFIX}tagall - Tag semua anggota\n├ ${PREFIX}rules - Peraturan grup\n└ ${PREFIX}link - Info link grup\n\n` : ""}*Contoh:* ${PREFIX}ai Berapa harga produk A?
@@ -131,42 +133,42 @@ export function infoProduk() {
 export function infoHarga() {
   const produkList = bacaProduk();
   if (produkList.length === 0) {
-    return `💰 *Price List ${BISNIS}*\n\n_Belum ada produk._`;
+    return `💎 *PRICE LIST ${STORE_NAME}*\n\n_Belum ada produk tersedia._`;
   }
+
   const byKat = {};
   for (const p of produkList) {
     const kat = p.kategori || "Lainnya";
     if (!byKat[kat]) byKat[kat] = [];
     byKat[kat].push(p);
   }
-  let teks = `╔══════════════════════════════╗\n`;
-  teks     += `║  💎 *PRICE LIST PREMIUM*  \n`;
-  teks     += `║  ${BISNIS.toUpperCase()}  \n`;
-  teks     += `╚══════════════════════════════╝\n\n`;
+
+  let teks = `✦━━━━━━━━━━━━━━━━━━━━✦\n`;
+  teks     += `       💎 *${STORE_NAME}*\n`;
+  teks     += `      *PREMIUM PRICE LIST*\n`;
+  teks     += `✦━━━━━━━━━━━━━━━━━━━━✦\n\n`;
 
   for (const [kat, items] of Object.entries(byKat)) {
-    teks += `🏷️ *${kat}*\n`;
-    items.forEach(p => {
+    teks += `╭── ✦ *${kat.toUpperCase()}* ✦ ──╮\n`;
+    items.forEach((p, index) => {
       const stok  = p.stok ?? 999;
-      const badge = stok <= 0 ? '❌ HABIS'
-                  : stok <= 5 ? '⚠️ TERBATAS'
-                  : '✅ READY';
-      const nama  = p.nama.padEnd(22, ' ');
-      const harga = formatRp(p.harga);
-      teks += `┌─────────────────────────────\n`;
-      teks += `│ 📦 *${p.nama}*\n`;
-      teks += `│ 🏷️  Kode    : *${p.kode || '-'}*\n`;
-      teks += `│ 💰  Harga   : *${harga}*\n`;
-      teks += `│ 📊  Status  : ${badge}\n`;
-      if (stok > 0 && stok <= 50) teks += `│ 📉  Stok    : ${stok} pcs\n`;
-      if (p.deskripsi) teks += `│ 📝  _${p.deskripsi.slice(0,45)}_\n`;
-      teks += `└─────────────────────────────\n`;
+      const status = stok <= 0 ? "❌ HABIS"
+                   : stok <= 5 ? "⚠️ TERBATAS"
+                   : "✅ READY";
+
+      teks += `│ ${status}  *${p.nama}*\n`;
+      teks += `│ Kode *${p.kode || "-"}*  •  *${formatRp(p.harga)}*\n`;
+      if (index < items.length - 1) teks += `│ ──────────────────\n`;
     });
-    teks += `\n`;
+    teks += `╰────────────────────╯\n\n`;
   }
-  teks += `⚡ *${PREFIX}order [KODE] [JUMLAH]* untuk pesan\n`;
-  teks += `_Contoh: ${PREFIX}order P001 1_\n\n`;
-  teks += `🔥 BELI SEKARANG, AKTIVASI LANGSUNG!`;
+
+  teks += `🛒 *CARA MEMBELI*\n`;
+  teks += `Ketik: *${PREFIX}order [KODE] [JUMLAH]*\n`;
+  teks += `Contoh: *${PREFIX}order P001 1*\n\n`;
+  teks += `🔐 _QRIS hanya muncul setelah pesanan berhasil dibuat._\n`;
+  teks += `⚡ *AKTIVASI CEPAT • AMAN • TERPERCAYA*`;
+
   return teks;
 }
 

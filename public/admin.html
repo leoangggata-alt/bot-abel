@@ -88,6 +88,20 @@
     .main { margin-left: 240px; flex: 1; padding: 32px; }
     .page { display: none; }
     .page.active { display: block; }
+    .mobile-nav {
+      display: none; gap: 8px; overflow-x: auto; padding: 4px 0 14px;
+      margin-bottom: 12px; scrollbar-width: none;
+    }
+    .mobile-nav::-webkit-scrollbar { display: none; }
+    .mobile-nav-item {
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text-muted); border-radius: 9px; padding: 9px 12px;
+      white-space: nowrap; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .mobile-nav-item.active {
+      color: var(--primary-light); border-color: rgba(124,58,237,.45);
+      background: var(--primary-glow);
+    }
 
     /* ── Header ── */
     .page-header { margin-bottom: 28px; }
@@ -230,11 +244,86 @@
     .settings-title { font-size: 14px; font-weight: 700; margin-bottom: 16px;
       padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 
+    /* ── API Key Pool ── */
+    .security-note {
+      background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+      border-radius: 10px; padding: 14px 16px; color: #fcd34d; font-size: 13px;
+      line-height: 1.6; margin-bottom: 20px;
+    }
+    .api-grid {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px; align-items: start;
+    }
+    .provider-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .provider-head {
+      padding: 18px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .provider-icon {
+      width: 42px; height: 42px; border-radius: 11px; display: grid;
+      place-items: center; font-size: 21px; background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+    .provider-name { font-size: 15px; font-weight: 800; }
+    .provider-usage { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+    .slot-count {
+      margin-left: auto; font-size: 11px; font-weight: 700;
+      padding: 4px 9px; border-radius: 12px; background: var(--primary-glow);
+      color: var(--primary-light);
+    }
+    .key-list { padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+    .key-slot {
+      display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+      border-radius: 9px; background: var(--surface2); border: 1px solid var(--border);
+    }
+    .key-slot.empty-slot {
+      border-style: dashed; color: var(--text-muted); min-height: 58px;
+      justify-content: center; font-size: 12px;
+    }
+    .key-info { min-width: 0; flex: 1; }
+    .key-label { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+    .key-masked {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px; color: var(--accent); white-space: normal;
+      overflow-wrap: anywhere; word-break: break-all; user-select: all;
+    }
+    .key-meta { color: var(--text-muted); font-size: 10px; margin-top: 3px; }
+    .key-actions { display: flex; gap: 5px; flex-shrink: 0; }
+    .key-toggle {
+      border: 1px solid rgba(16,185,129,.35); background: rgba(16,185,129,.12);
+      color: var(--success); border-radius: 7px; padding: 5px 8px;
+      font-size: 10px; font-weight: 700; cursor: pointer;
+    }
+    .key-toggle.off {
+      border-color: rgba(148,163,184,.3); background: rgba(148,163,184,.1);
+      color: var(--text-muted);
+    }
+    .key-delete {
+      border: 1px solid rgba(239,68,68,.3); background: rgba(239,68,68,.1);
+      color: var(--danger); border-radius: 7px; padding: 5px 8px;
+      font-size: 11px; cursor: pointer;
+    }
+    .key-add {
+      display: grid; grid-template-columns: .8fr 1.5fr auto; gap: 8px;
+      padding: 14px; border-top: 1px solid var(--border); background: rgba(0,0,0,.08);
+    }
+    .key-add input { font-size: 12px; padding: 9px 10px; }
+    .api-empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 30px; }
+
     @media(max-width: 768px) {
       .sidebar { display: none; }
-      .main { margin-left: 0; padding: 16px; }
+      .main { margin-left: 0; padding: 16px; width: 100%; min-width: 0; overflow-x: hidden; }
+      .mobile-nav { display: flex; }
+      .url-banner { display: none !important; }
       .stats-grid { grid-template-columns: repeat(2,1fr); }
       .form-grid { grid-template-columns: 1fr; }
+      .api-grid { grid-template-columns: 1fr; }
+      .key-add { grid-template-columns: 1fr; }
+      .provider-card, .key-slot, .key-info { min-width: 0; }
+      #page-api-keys .page-header { flex-direction: column; }
     }
   </style>
 </head>
@@ -252,19 +341,22 @@
     </div>
     <nav>
       <div class="nav-label">Menu</div>
-      <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">
+      <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard" data-nav-page="dashboard">
         <span class="icon">📊</span> Dashboard
       </div>
-      <div class="nav-item" onclick="showPage('products')" id="nav-products">
+      <div class="nav-item" onclick="showPage('products')" id="nav-products" data-nav-page="products">
         <span class="icon">📦</span> Produk
       </div>
-      <div class="nav-item" onclick="showPage('orders')" id="nav-orders">
+      <div class="nav-item" onclick="showPage('orders')" id="nav-orders" data-nav-page="orders">
         <span class="icon">🛒</span> Pesanan
         <span id="order-badge" style="display:none;margin-left:auto;background:var(--danger);color:white;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700"></span>
       </div>
       <div class="nav-label">Pengaturan</div>
-      <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
+      <div class="nav-item" onclick="showPage('settings')" id="nav-settings" data-nav-page="settings">
         <span class="icon">⚙️</span> Pengaturan Bot
+      </div>
+      <div class="nav-item" onclick="showPage('api-keys')" id="nav-api-keys" data-nav-page="api-keys">
+        <span class="icon">🔐</span> API Keys
       </div>
     </nav>
     <div class="sidebar-footer">
@@ -276,6 +368,15 @@
 
   <!-- Main -->
   <main class="main">
+
+    <!-- Navigasi khusus layar HP -->
+    <div class="mobile-nav">
+      <button class="mobile-nav-item active" data-nav-page="dashboard" onclick="showPage('dashboard')">📊 Dashboard</button>
+      <button class="mobile-nav-item" data-nav-page="products" onclick="showPage('products')">📦 Produk</button>
+      <button class="mobile-nav-item" data-nav-page="orders" onclick="showPage('orders')">🛒 Pesanan</button>
+      <button class="mobile-nav-item" data-nav-page="settings" onclick="showPage('settings')">⚙️ Bot</button>
+      <button class="mobile-nav-item" data-nav-page="api-keys" onclick="showPage('api-keys')">🔐 API Keys</button>
+    </div>
 
     <!-- Public URL Banner -->
     <div class="url-banner" id="url-banner" style="display:none">
@@ -419,6 +520,25 @@
       </div>
     </div>
 
+    <!-- API KEY POOL -->
+    <div class="page" id="page-api-keys">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div>
+          <div class="page-title">🔐 API Key Manager</div>
+          <div class="page-sub">Kelola 3–10 slot key untuk setiap otak AI</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadApiKeys()">🔄 Refresh</button>
+      </div>
+      <div class="security-note">
+        🔓 <strong>API key ditampilkan lengkap setelah login admin.</strong>
+        File penyimpanan di perangkat tetap terenkripsi. Jangan berikan kode akses
+        panel kepada orang lain.
+      </div>
+      <div class="api-grid" id="api-provider-grid">
+        <div class="api-empty">Memuat konfigurasi API key...</div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -479,6 +599,7 @@
 <script>
   let allProducts = [];
   let allOrders = [];
+  let apiKeyData = null;
   let editingId = null;
   let isAktif = true;
 
@@ -501,6 +622,7 @@
     await loadOrders();
     await loadDashboard();
     await loadSettings();
+    await loadApiKeys();
     await loadTunnelUrl();
     // Refresh URL setiap 30 detik (jika tunnel baru aktif)
     setInterval(loadTunnelUrl, 30000);
@@ -733,12 +855,160 @@
     showToast('✅ Pengaturan disimpan!');
   }
 
+  // ── API Key Pool ──────────────────────────────────────────
+  function escapeHtml(value='') {
+    return String(value).replace(/[&<>"']/g, char => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
+    })[char]);
+  }
+
+  async function parseApiResponse(response) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
+  async function loadApiKeys() {
+    const grid = document.getElementById('api-provider-grid');
+    try {
+      apiKeyData = await fetch('/api/api-keys?reveal=true').then(parseApiResponse);
+      renderApiKeys();
+    } catch (error) {
+      grid.innerHTML = `<div class="api-empty">❌ ${escapeHtml(error.message)}</div>`;
+    }
+  }
+
+  function renderApiKeys() {
+    const grid = document.getElementById('api-provider-grid');
+    const minSlots = apiKeyData?.minSlots || 3;
+    const maxSlots = apiKeyData?.maxSlots || 10;
+    const providers = apiKeyData?.providers || {};
+
+    grid.innerHTML = Object.entries(providers).map(([provider, data]) => {
+      const keys = data.keys || [];
+      const emptyCount = Math.max(0, minSlots - keys.length);
+      const rows = keys.map((key, index) => `
+        <div class="key-slot">
+          <div class="key-info">
+            <div class="key-label">Slot ${index + 1} • ${escapeHtml(key.label)}</div>
+            <div class="key-masked">${escapeHtml(key.value || key.masked)}</div>
+            <div class="key-meta">${key.source === 'env' ? 'Diimpor dari .env' : 'Ditambah dari panel'} • ${key.active ? 'Aktif' : 'Nonaktif'}</div>
+          </div>
+          <div class="key-actions">
+            <button class="key-toggle" title="Salin API key"
+              onclick="copyApiKey('${provider}','${key.id}')">📋</button>
+            <button class="key-toggle ${key.active ? '' : 'off'}"
+              onclick="toggleApiKey('${provider}','${key.id}',${!key.active})">
+              ${key.active ? 'ON' : 'OFF'}
+            </button>
+            <button class="key-delete" onclick="removeApiKey('${provider}','${key.id}')">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+      const placeholders = Array.from({length: emptyCount}, (_, index) => `
+        <div class="key-slot empty-slot">＋ Slot ${keys.length + index + 1} masih kosong</div>
+      `).join('');
+      const disabled = keys.length >= maxSlots ? 'disabled' : '';
+
+      return `
+        <section class="provider-card">
+          <div class="provider-head">
+            <div class="provider-icon" style="box-shadow:inset 0 0 0 1px ${escapeHtml(data.color)}55">${escapeHtml(data.icon)}</div>
+            <div>
+              <div class="provider-name">${escapeHtml(data.name)}</div>
+              <div class="provider-usage">${escapeHtml(data.usage)}</div>
+            </div>
+            <div class="slot-count">${keys.length}/${maxSlots}</div>
+          </div>
+          <div class="key-list">${rows}${placeholders}</div>
+          <div class="key-add">
+            <input id="key-label-${provider}" placeholder="Nama slot, mis. Utama" ${disabled}/>
+            <input id="key-value-${provider}" type="text" autocomplete="off"
+              placeholder="Masukkan API key baru" ${disabled}/>
+            <button class="btn btn-primary btn-sm" onclick="addApiKey('${provider}')" ${disabled}>
+              ＋ Simpan
+            </button>
+          </div>
+        </section>
+      `;
+    }).join('');
+  }
+
+  async function addApiKey(provider) {
+    const labelInput = document.getElementById(`key-label-${provider}`);
+    const keyInput = document.getElementById(`key-value-${provider}`);
+    const key = keyInput.value.trim();
+    if (!key) {
+      showToast('⚠️ Masukkan API key terlebih dahulu', 'error');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/api-keys/${provider}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ label: labelInput.value.trim(), key }),
+      });
+      await parseApiResponse(response);
+      keyInput.value = '';
+      labelInput.value = '';
+      await loadApiKeys();
+      showToast('✅ API key dienkripsi dan disimpan');
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  }
+
+  async function toggleApiKey(provider, id, active) {
+    try {
+      const response = await fetch(`/api/api-keys/${provider}/${id}`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ active }),
+      });
+      await parseApiResponse(response);
+      await loadApiKeys();
+      showToast(active ? '✅ Slot API diaktifkan' : '⏸️ Slot API dinonaktifkan');
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  }
+
+  async function copyApiKey(provider, id) {
+    const key = apiKeyData?.providers?.[provider]?.keys?.find(item => item.id === id);
+    if (!key?.value) {
+      showToast('❌ API key lengkap tidak tersedia', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(key.value);
+      showToast('📋 API key berhasil disalin');
+    } catch {
+      showToast('❌ Browser tidak mengizinkan akses clipboard', 'error');
+    }
+  }
+
+  async function removeApiKey(provider, id) {
+    if (!confirm('Hapus API key ini secara permanen dari perangkat?')) return;
+    try {
+      const response = await fetch(`/api/api-keys/${provider}/${id}`, {
+        method: 'DELETE',
+      });
+      await parseApiResponse(response);
+      await loadApiKeys();
+      showToast('🗑️ API key berhasil dihapus');
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  }
+
   // ── Navigation ────────────────────────────────────────────
   function showPage(page) {
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.querySelectorAll('.nav-item,.mobile-nav-item').forEach(n=>n.classList.remove('active'));
     document.getElementById('page-'+page).classList.add('active');
-    document.getElementById('nav-'+page).classList.add('active');
+    document.querySelectorAll(`[data-nav-page="${page}"]`).forEach(n=>n.classList.add('active'));
+    if (page === 'api-keys') loadApiKeys();
   }
 
   // ── Toast ─────────────────────────────────────────────────

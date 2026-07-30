@@ -70,7 +70,7 @@ export async function kirimQRIS(sock, to, noOrder, total, mentions = []) {
     await sock.sendMessage(to, {
       image: qrisBuffer,
       caption:
-        `💳 *QRIS - Bengkel AJM*\n` +
+        `💳 *QRIS - ABEL-LAB*\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `🔖 Order  : *${noOrder}*\n` +
         `💰 Total  : *${formatRp(total)}*\n` +
