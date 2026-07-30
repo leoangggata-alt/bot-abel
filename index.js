@@ -36,6 +36,20 @@ let reconnectTimer = null;
 let reconnectAttempt = 0;
 let lastPairingRequestAt = 0;
 let shuttingDown = false;
+const recentMessageIds = new Set();
+const recentMessageOrder = [];
+
+function isDuplicateMessage(id) {
+  if (!id) return false;
+  if (recentMessageIds.has(id)) return true;
+
+  recentMessageIds.add(id);
+  recentMessageOrder.push(id);
+  if (recentMessageOrder.length > 1000) {
+    recentMessageIds.delete(recentMessageOrder.shift());
+  }
+  return false;
+}
 
 function scheduleReconnect() {
   if (shuttingDown || reconnectTimer) return;
@@ -120,10 +134,12 @@ async function connectToWhatsApp() {
     }
 
     if (connection === "close") {
-      const shouldReconnect =
+      const statusCode =
         lastDisconnect?.error instanceof Boom
-          ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
-          : true;
+          ? lastDisconnect.error.output.statusCode
+          : "unknown";
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      console.warn(`[KONEKSI] tertutup | status=${statusCode}`);
 
       if (shouldReconnect) {
         if (activeSocket === sock) activeSocket = null;
@@ -169,6 +185,10 @@ async function connectToWhatsApp() {
           messageTimeMs > 0 &&
           Date.now() - messageTimeMs > 2 * 60 * 1000
         ) {
+          continue;
+        }
+        if (isDuplicateMessage(msg.key.id)) {
+          console.log(`[SKIP] Pesan duplikat: ${msg.key.id}`);
           continue;
         }
 

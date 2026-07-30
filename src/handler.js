@@ -69,8 +69,12 @@ export async function handleMessage(sock, msg) {
 
     console.log(`[MSG] ${isGrup ? "Grup" : "Personal"} | ${senderNum} | "${teks.slice(0, 60)}"`);
 
-    // Auto read (centang biru)
-    if (AUTO_READ) await sock.readMessages([key]);
+    // Fitur tambahan tidak boleh menggagalkan command utama saat koneksi goyah.
+    if (AUTO_READ) {
+      sock.readMessages([key]).catch((err) => {
+        console.warn(`[AUTO_READ] dilewati: ${err?.message || err}`);
+      });
+    }
 
     // Anti-spam (hanya di grup)
     if (isGrup && ANTI_SPAM) {
@@ -81,8 +85,11 @@ export async function handleMessage(sock, msg) {
       }
     }
 
-    // Auto typing indicator
-    if (AUTO_TYPING) await sock.sendPresenceUpdate("composing", from);
+    if (AUTO_TYPING) {
+      sock.sendPresenceUpdate("composing", from).catch((err) => {
+        console.warn(`[AUTO_TYPING] dilewati: ${err?.message || err}`);
+      });
+    }
 
     const trimTeks = teks.trim();
     const lowerTeks = trimTeks.toLowerCase();
@@ -405,10 +412,26 @@ export async function handleGroupUpdate(sock, updates) {
 
 // ── Helper kirim pesan ──────────────────────────────────────
 async function kirim(sock, to, teks, mentions = []) {
-  try {
-    await sock.sendMessage(to, { text: teks, mentions });
-    console.log(`[KIRIM ✅] ke ${to} | "${teks.slice(0, 50)}..."`);
-  } catch (err) {
-    console.error(`[KIRIM ❌] ke ${to} | Error: ${err?.stack || err}`);
+  let lastError;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await sock.sendMessage(to, { text: teks, mentions });
+      console.log(
+        `[KIRIM ✅] ke ${to} | percobaan=${attempt} | "${teks.slice(0, 50)}..."`,
+      );
+      return true;
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `[KIRIM] percobaan=${attempt} gagal ke ${to}: ${err?.message || err}`,
+      );
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
   }
+
+  console.error(`[KIRIM ❌] ke ${to} | Error: ${lastError?.stack || lastError}`);
+  return false;
 }
