@@ -17,7 +17,9 @@ import {
   buatTagAll, cekSpam, resetSpam
 } from "./group.js";
 
-const PREFIX = process.env.PREFIX || "!";
+const PREFIX =
+  process.env.BOT_PREFIX ||
+  (process.env.PREFIX?.length <= 3 ? process.env.PREFIX : "!");
 const OWNER = process.env.OWNER_NUMBER;
 const AUTO_READ = process.env.AUTO_READ !== "false";
 const AUTO_TYPING = process.env.AUTO_TYPING !== "false";
@@ -129,7 +131,7 @@ export async function handleMessage(sock, msg) {
       }
     }
   } catch (err) {
-    console.error("[Handler Error]", err.message);
+    console.error("[Handler Error]", err?.stack || err);
   }
 }
 
@@ -224,7 +226,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     // ── Konfirmasi pembayaran: !konfirmasi [NO_ORDER] ──────────────
     case "konfirmasi":
     case "confirm":
-    case "bayar": {
+    {
       if (!sisa) {
         await kirim(sock, from,
           `✅ *Konfirmasi Pembayaran*\n\n` +
@@ -407,6 +409,6 @@ async function kirim(sock, to, teks, mentions = []) {
     await sock.sendMessage(to, { text: teks, mentions });
     console.log(`[KIRIM ✅] ke ${to} | "${teks.slice(0, 50)}..."`);
   } catch (err) {
-    console.error(`[KIRIM ❌] ke ${to} | Error: ${err.message}`);
+    console.error(`[KIRIM ❌] ke ${to} | Error: ${err?.stack || err}`);
   }
 }

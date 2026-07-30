@@ -1,89 +1,85 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# ============================================================
-#  start-all.sh - Jalankan Bot Abel + Admin Panel + Public Link
-#  Cara pakai: bash start-all.sh
-# ============================================================
+set -euo pipefail
 
-clear
-echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║   🤖 Bot Abel - Starting All...       ║"
-echo "╚══════════════════════════════════════╝"
-echo ""
+BOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$BOT_DIR"
+mkdir -p logs data session
 
-# ── Matikan proses lama ───────────────────────────────────────
-pkill -f "node index.js" 2>/dev/null
-pkill -f "node admin-server.js" 2>/dev/null
-pkill -f "cloudflared" 2>/dev/null
-sleep 1
+if [ ! -f ".env" ]; then
+  echo "File .env belum ada. Jalankan: bash setup-termux.sh"
+  exit 1
+fi
 
-# ── Jalankan Bot WhatsApp di background ──────────────────────
-echo "🤖 Memulai Bot WhatsApp..."
-nohup node index.js > logs/bot.log 2>&1 &
-BOT_PID=$!
-echo "   ✅ Bot PID: $BOT_PID"
-sleep 2
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js belum terpasang. Jalankan: bash setup-termux.sh"
+  exit 1
+fi
 
-# ── Jalankan Admin Panel di background ───────────────────────
-echo "🛠️  Memulai Admin Panel (port 8080)..."
-nohup node admin-server.js > logs/admin.log 2>&1 &
-ADMIN_PID=$!
-echo "   ✅ Admin PID: $ADMIN_PID"
-sleep 2
+if ! command -v pm2 >/dev/null 2>&1; then
+  echo "PM2 belum terpasang; memasang sekarang..."
+  npm install -g pm2
+fi
 
-# ── Jalankan Cloudflare Tunnel untuk Admin Panel ─────────────
-echo "🌐 Membuat link publik Admin Panel..."
-mkdir -p logs
-nohup cloudflared tunnel --url http://localhost:8080 > logs/tunnel.log 2>&1 &
-CF_PID=$!
+termux-wake-lock 2>/dev/null || true
 
-# ── Tunggu URL tunnel muncul ─────────────────────────────────
-echo "   ⏳ Menunggu URL tunnel..."
-sleep 5
+# Muat nilai sederhana dari .env tanpa mengeksekusi isi file.
+env_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" .env | tail -n 1 | tr -d '\r'
+}
 
-TUNNEL_URL=""
-for i in {1..15}; do
-  TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' logs/tunnel.log 2>/dev/null | head -1)
-  if [ -n "$TUNNEL_URL" ]; then
-    break
+ENABLE_TUNNEL_VALUE="$(env_value ENABLE_TUNNEL)"
+ADMIN_PASSWORD_VALUE="$(env_value ADMIN_PASSWORD)"
+ADMIN_PORT_VALUE="$(env_value ADMIN_PORT)"
+ADMIN_PORT_VALUE="${ADMIN_PORT_VALUE:-8080}"
+
+if [ "${ENABLE_TUNNEL_VALUE,,}" = "true" ]; then
+  if [ -z "$ADMIN_PASSWORD_VALUE" ]; then
+    echo "ENABLE_TUNNEL=true tetapi ADMIN_PASSWORD kosong."
+    echo "Isi sandi admin di .env sebelum membuka panel ke internet."
+    exit 1
   fi
-  sleep 2
-done
-
-# ── Simpan URL ke file ───────────────────────────────────────
-if [ -n "$TUNNEL_URL" ]; then
-  echo "$TUNNEL_URL" > logs/admin-url.txt
-fi
-
-# ── Tampilkan info ───────────────────────────────────────────
-echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║  ✅ SEMUA LAYANAN AKTIF!              ║"
-echo "╠══════════════════════════════════════╣"
-echo "║  🤖 Bot WhatsApp   : AKTIF           ║"
-echo "║  🛠️  Admin Panel    : AKTIF           ║"
-if [ -n "$TUNNEL_URL" ]; then
-echo "╠══════════════════════════════════════╣"
-echo "║  🌐 LINK ADMIN PANEL:                ║"
-echo "║  $TUNNEL_URL"
-echo "╚══════════════════════════════════════╝"
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "cloudflared belum terpasang. Jalankan: bash setup-termux.sh"
+    exit 1
+  fi
 else
-echo "╠══════════════════════════════════════╣"
-echo "║  ⚠️  Tunnel belum dapat URL           ║"
-echo "║  Cek: cat logs/tunnel.log            ║"
-echo "╚══════════════════════════════════════╝"
+  pm2 delete abel-tunnel >/dev/null 2>&1 || true
+  rm -f logs/admin-url.txt
 fi
 
-echo ""
-echo "📋 Perintah berguna:"
-echo "   Lihat log bot   : tail -f logs/bot.log"
-echo "   Lihat log admin : tail -f logs/admin.log"
-echo "   Lihat URL tunnel: cat logs/admin-url.txt"
-echo "   Stop semua      : bash stop-all.sh"
-echo ""
+echo "Menjalankan layanan Bot Abel dengan PM2..."
+pm2 startOrReload ecosystem.config.cjs --update-env
+pm2 save --force >/dev/null
 
-# ── Tampilkan log bot secara live ────────────────────────────
-echo "📡 Live Log Bot (Ctrl+C untuk berhenti menonton):"
-echo "─────────────────────────────────────────────────"
-sleep 1
-tail -f logs/bot.log
+sleep 3
+pm2 status
+
+echo
+echo "Bot berjalan di background dan akan di-restart otomatis bila crash."
+echo "Status : bash status-all.sh"
+echo "Log    : pm2 logs abel-bot --lines 100"
+echo "Stop   : bash stop-all.sh"
+
+if [ "${ENABLE_TUNNEL_VALUE,,}" = "true" ]; then
+  echo
+  echo "Menunggu URL admin publik..."
+  for _ in $(seq 1 20); do
+    if [ -s logs/admin-url.txt ]; then
+      echo "Admin  : $(cat logs/admin-url.txt)"
+      echo "Login  : $(env_value ADMIN_USER)"
+      break
+    fi
+    sleep 1
+  done
+  if [ ! -s logs/admin-url.txt ]; then
+    echo "URL belum tersedia. Cek: pm2 logs abel-tunnel --lines 100"
+  fi
+else
+  echo "Admin  : http://127.0.0.1:${ADMIN_PORT_VALUE}"
+  echo "Tunnel : nonaktif (lebih aman; ubah ENABLE_TUNNEL=true bila diperlukan)"
+fi
+
+if [ "${1:-}" = "--logs" ]; then
+  pm2 logs abel-bot --lines 100
+fi

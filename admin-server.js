@@ -6,18 +6,70 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
+import dotenv from "dotenv";
 import { fileURLToPath } from "url";
+
+dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = 8080;
+const PORT = Number.parseInt(process.env.ADMIN_PORT || "8080", 10);
+const HOST = process.env.ADMIN_HOST || "127.0.0.1";
+const ADMIN_USER = process.env.ADMIN_USER || "admin";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const DATA_FILE     = path.join(__dirname, "data", "products.json");
 const ORDERS_FILE   = path.join(__dirname, "data", "orders.json");
 const SETTINGS_FILE = path.join(__dirname, "data", "settings.json");
 const TUNNEL_LOG    = path.join(__dirname, "logs", "tunnel.log");
 const TUNNEL_URL_FILE = path.join(__dirname, "logs", "admin-url.txt");
 
-app.use(express.json());
+app.disable("x-powered-by");
+
+// Health check tetap bisa dipakai PM2/status tanpa membuka data admin.
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, uptime: Math.floor(process.uptime()) });
+});
+
+function safeEqual(actual, expected) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}
+
+function requireAdmin(req, res, next) {
+  // Panel lokal tetap bisa dipakai tanpa sandi. Tunnel menolak start bila sandi kosong.
+  if (!ADMIN_PASSWORD) return next();
+
+  const authorization = req.headers.authorization || "";
+  if (authorization.startsWith("Basic ")) {
+    try {
+      const decoded = Buffer.from(authorization.slice(6), "base64").toString(
+        "utf8",
+      );
+      const separator = decoded.indexOf(":");
+      const username = separator >= 0 ? decoded.slice(0, separator) : "";
+      const password = separator >= 0 ? decoded.slice(separator + 1) : "";
+      if (
+        safeEqual(username, ADMIN_USER) &&
+        safeEqual(password, ADMIN_PASSWORD)
+      ) {
+        return next();
+      }
+    } catch {
+      // Header tidak valid akan ditolak di bawah.
+    }
+  }
+
+  res.set("WWW-Authenticate", 'Basic realm="Bot Abel Admin"');
+  return res.status(401).send("Login admin diperlukan.");
+}
+
+app.use(requireAdmin);
+app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ── Baca URL tunnel Cloudflare ────────────────────────────────
@@ -148,10 +200,10 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
   console.log(`║  🛠️  Admin Panel Bot Abel             ║`);
-  console.log(`║  🌐 http://localhost:${PORT}           ║`);
+  console.log(`║  🌐 http://${HOST}:${PORT}           ║`);
   console.log(`║  📦 Data: data/products.json          ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
 });

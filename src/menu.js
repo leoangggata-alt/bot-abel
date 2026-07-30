@@ -11,7 +11,9 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
 export const BANNER_FILE = path.join(__dirname, "../assets/banner.png");
-const PREFIX = process.env.PREFIX || "!";
+const PREFIX =
+  process.env.BOT_PREFIX ||
+  (process.env.PREFIX?.length <= 3 ? process.env.PREFIX : "!");
 const BISNIS = process.env.BUSINESS_NAME || "Abel-Lab";
 
 // ── Baca produk dari file JSON ────────────────────────────────

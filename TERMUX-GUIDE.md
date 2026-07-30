@@ -1,140 +1,123 @@
-# 📱 Panduan Lengkap: Bot Abel di Termux (HP Android)
+# Menjalankan Bot Abel 24/7 di Termux
 
-## Persiapan
-- HP Android (minimal 2GB RAM)
-- Koneksi internet stabil
-- Charger selalu tancap
+## 1. Pasang aplikasi Android
 
----
+Pasang dari F-Droid, bukan Play Store:
 
-## Langkah 1: Install Termux
+- Termux
+- Termux:Boot
 
-> ⚠️ **Jangan install dari Play Store** — versi sudah kadaluarsa!
+Buka Termux:Boot satu kali setelah terpasang agar Android memberi izin autostart.
 
-1. Buka: **https://f-droid.org**
-2. Cari dan download **Termux**
-3. Install APK-nya
+## 2. Salin dan ekstrak proyek
 
----
+Salin `whatsapp-bot-baileys-termux.zip` ke penyimpanan internal HP. Di Termux:
 
-## Langkah 2: Upload kode bot ke HP
-
-**Pilihan A — Via GitHub:**
 ```bash
-# Di Termux, ketik:
-pkg install git nodejs -y
-git clone https://github.com/USERNAME/bot-abel.git
-cd bot-abel
-npm install
+termux-setup-storage
+pkg install unzip -y
+cd ~
+unzip ~/storage/shared/Download/whatsapp-bot-baileys-termux.zip
+cd whatsapp-bot-baileys
 ```
 
-**Pilihan B — Via USB/Copy langsung:**
-1. Copy folder bot ke HP (misal: `/sdcard/bot-abel/`)
-2. Di Termux:
-```bash
-pkg install nodejs -y
-cp -r /sdcard/bot-abel ~/bot-abel
-cd ~/bot-abel
-npm install
-```
+Jika nama/lokasi ZIP berbeda, sesuaikan path pada perintah `unzip`.
 
----
-
-## Langkah 3: Setup bot
+## 3. Setup dan mulai
 
 ```bash
 bash setup-termux.sh
-```
-
-Script akan otomatis install semua yang dibutuhkan.
-
----
-
-## Langkah 4: Jalankan bot
-
-```bash
 bash start-all.sh
 ```
 
-Output yang akan muncul:
+Saat setup, isi `PAIRING_NUMBER` dengan nomor akun WhatsApp bot dalam format
+`628...`. Lihat pairing code:
+
+```bash
+pm2 logs abel-bot --lines 100
 ```
-✅ Bot WhatsApp    : AKTIF
-✅ Admin Panel     : AKTIF
-🌐 LINK ADMIN PANEL:
-   https://xxx-xxx.trycloudflare.com
+
+Di WhatsApp buka **Perangkat tertaut → Tautkan perangkat → Tautkan dengan
+nomor telepon**, lalu masukkan kode dari log.
+
+## 4. Pastikan tetap aktif
+
+```bash
+termux-wake-lock
+bash status-all.sh
 ```
 
-**Link itu bisa dibuka dari HP/PC manapun!** 🎉
+Di pengaturan Android:
 
----
+1. Baterai → Termux → **Tidak dibatasi**.
+2. Baterai → Termux:Boot → **Tidak dibatasi**.
+3. Izinkan Termux dan Termux:Boot berjalan di latar belakang/autostart.
+4. Gunakan koneksi stabil dan charger untuk operasi terus-menerus.
 
-## Perintah Penting
+Skrip setup membuat `~/.termux/boot/abel-bot.sh`. Setelah HP reboot,
+Termux:Boot menjalankan bot kembali; PM2 me-restart proses bila crash.
+
+## Perintah harian
 
 | Perintah | Fungsi |
 |---|---|
-| `bash start-all.sh` | Jalankan semua |
-| `bash stop-all.sh` | Stop semua |
-| `tail -f logs/bot.log` | Lihat log bot live |
-| `cat logs/admin-url.txt` | Lihat link admin panel |
+| `bash start-all.sh` | Mulai/reload semua layanan |
+| `bash status-all.sh` | Status dan log terakhir |
+| `pm2 logs abel-bot --lines 100` | Pantau log bot |
+| `bash stop-all.sh` | Hentikan semua layanan |
+| `pm2 save --force` | Simpan daftar proses PM2 |
 
----
+## Panel admin
 
-## Tips Agar HP Tidak Sleep
+Default aman: panel hanya lokal di `http://127.0.0.1:8080`.
 
-**Metode 1 — Termux Wake Lock:**
-```bash
-termux-wake-lock
+Untuk URL publik, edit `.env`:
+
+```dotenv
+ADMIN_USER=admin
+ADMIN_PASSWORD=password-panjang-dan-unik
+ENABLE_TUNNEL=true
 ```
 
-**Metode 2 — Pengaturan HP:**
-- Matikan *Battery Optimization* untuk Termux
-- Aktifkan *Keep Screen On* (opsional)
-- Pengaturan → Baterai → Termux → Tidak dibatasi
+Lalu:
 
-**Metode 3 — Termux:Boot (Otomatis Start saat HP nyala):**
-1. Install **Termux:Boot** dari F-Droid
-2. Buat file:
 ```bash
-mkdir -p ~/.termux/boot
-cat > ~/.termux/boot/start-bot.sh << 'EOF'
-#!/data/data/com.termux/files/usr/bin/bash
-cd ~/bot-abel
+pkg install cloudflared -y
 bash start-all.sh
-EOF
-chmod +x ~/.termux/boot/start-bot.sh
+cat logs/admin-url.txt
 ```
 
----
+URL `trycloudflare.com` dapat berubah saat tunnel restart. Login memakai
+`ADMIN_USER` dan `ADMIN_PASSWORD`.
 
-## Akses Admin Panel dari Manapun
+## Pemecahan masalah
 
-Setelah `bash start-all.sh`, kamu dapat URL seperti:
-```
-https://quiet-bird-1234.trycloudflare.com
-```
+Bot tidak terhubung:
 
-Buka link itu dari **HP lain, laptop, atau PC** untuk kelola produk! ✅
-
-> 💡 URL berubah setiap kali restart. Untuk URL tetap, gunakan **Cloudflare Tunnel** berbayar atau **ngrok** dengan akun gratis.
-
----
-
-## Troubleshooting
-
-**Bot tidak connect WhatsApp:**
 ```bash
-# Hapus session dan scan ulang
-rm -rf session/
-node index.js
+pm2 logs abel-bot --lines 150
 ```
 
-**Admin panel tidak bisa dibuka:**
+Jika sesi benar-benar logout, hentikan bot lalu hapus sesi dan pairing ulang:
+
 ```bash
-# Cek apakah berjalan
-curl http://localhost:8080/api/stats
+bash stop-all.sh
+rm -rf session
+bash start-all.sh
 ```
 
-**Tunnel tidak dapat URL:**
+Admin tidak merespons:
+
 ```bash
-cat logs/tunnel.log | grep trycloudflare
+curl http://127.0.0.1:8080/api/health
+pm2 logs abel-admin --lines 100
 ```
+
+Autostart tidak berjalan setelah reboot:
+
+```bash
+ls -l ~/.termux/boot/abel-bot.sh
+cat logs/boot.log
+```
+
+Pastikan Termux:Boot sudah pernah dibuka dan optimasi baterainya dimatikan.
