@@ -47,7 +47,7 @@ function createRuntime(profileId) {
     socket: null,
     reconnectTimer: null,
     reconnectAttempt: 0,
-    lastPairingRequestAt: 0,
+    pairingRequestedGeneration: -1,
     connecting: false,
     generation: 0,
     recentMessageIds: new Set(),
@@ -136,6 +136,7 @@ async function restartBot(profileId) {
   if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
   runtime.reconnectTimer = null;
   runtime.reconnectAttempt = 0;
+  runtime.pairingRequestedGeneration = -1;
   runtime.connecting = false;
   const oldSocket = runtime.socket;
   runtime.socket = null;
@@ -180,33 +181,35 @@ function startBotControlService() {
   botControlTimer.unref?.();
 }
 
-async function requestPairingCode(sock, runtime, profile, registered) {
+async function requestPairingCode(sock, runtime, profile, registered, generation) {
   const number = profile.id === "abel"
     ? profile.pairingNumber || String(process.env.PAIRING_NUMBER || "").replace(/\D/g, "")
     : profile.pairingNumber;
-  if (registered || !number || Date.now() - runtime.lastPairingRequestAt <= 60000) return;
-  runtime.lastPairingRequestAt = Date.now();
-  setTimeout(async () => {
-    try {
-      const code = await sock.requestPairingCode(number);
-      const readableCode = code?.match(/.{1,4}/g)?.join("-") || code;
-      updateBotStatus(profile.id, {
-        state: "waiting_pairing",
-        connected: false,
-        pairingCode: readableCode,
-        message: `Masukkan kode pairing untuk ${profile.name}`,
-      });
-      console.log(`\n[${profile.name}] KODE PAIRING: ${readableCode}`);
-      console.log("WhatsApp > Perangkat tertaut > Tautkan dengan nomor telepon\n");
-    } catch (error) {
-      updateBotStatus(profile.id, {
-        state: "pairing_error",
-        connected: false,
-        message: error.message,
-      });
-      console.error(`[${profile.name}] Gagal meminta pairing code: ${error.message}`);
-    }
-  }, 2000);
+  if (profile.linkMethod !== "code" || registered || !number) return;
+  if (runtime.pairingRequestedGeneration === generation) return;
+  runtime.pairingRequestedGeneration = generation;
+  try {
+    const code = await sock.requestPairingCode(number);
+    const readableCode = code?.match(/.{1,4}/g)?.join("-") || code;
+    updateBotStatus(profile.id, {
+      state: "waiting_pairing",
+      connected: false,
+      pairingCode: readableCode,
+      qrAvailable: false,
+      message: `Masukkan kode pairing untuk ${profile.name}`,
+    });
+    console.log(`\n[${profile.name}] KODE PAIRING: ${readableCode}`);
+    console.log("WhatsApp > Perangkat tertaut > Tautkan dengan nomor telepon\n");
+  } catch (error) {
+    updateBotStatus(profile.id, {
+      state: "pairing_error",
+      connected: false,
+      pairingCode: "",
+      qrAvailable: false,
+      message: error.message,
+    });
+    console.error(`[${profile.name}] Gagal meminta pairing code: ${error.message}`);
+  }
 }
 
 async function connectBot(profileId) {
@@ -221,6 +224,7 @@ async function connectBot(profileId) {
     state: "connecting",
     connected: false,
     pairingCode: "",
+    qrAvailable: false,
     message: `Menghubungkan ${profile.name} ke WhatsApp`,
   });
 
@@ -246,26 +250,36 @@ async function connectBot(profileId) {
     runtime.connecting = false;
 
     console.log(`[${profile.name}] Baileys ${version.join(".")} — menghubungkan...`);
-    requestPairingCode(sock, runtime, profile, state.creds.registered);
-
     sock.ev.on("connection.update", async update => {
       if (runtime.generation !== generation) return;
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        console.log(`[${profile.name}] QR tersedia untuk dipindai`);
-        qrcode.generate(qr, { small: true });
-        updateBotStatus(profileId, {
-          state: "waiting_qr",
-          connected: false,
-          qrAvailable: true,
-          message: `Pindai QR untuk menghubungkan ${profile.name}`,
-        });
-        QRCode.toFile(qrImagePath, qr, {
-          color: { dark: "#000000", light: "#FFFFFF" },
-          width: 400,
-          margin: 2,
-        }).catch(error => console.error(`[${profile.name}] Gagal menyimpan QR: ${error.message}`));
+        if (profile.linkMethod === "code") {
+          updateBotStatus(profileId, {
+            state: "preparing_pairing",
+            connected: false,
+            pairingCode: "",
+            qrAvailable: false,
+            message: `Menyiapkan kode pairing untuk ${profile.name}`,
+          });
+          await requestPairingCode(sock, runtime, profile, state.creds.registered, generation);
+        } else {
+          console.log(`[${profile.name}] QR tersedia untuk dipindai`);
+          qrcode.generate(qr, { small: true });
+          updateBotStatus(profileId, {
+            state: "waiting_qr",
+            connected: false,
+            pairingCode: "",
+            qrAvailable: true,
+            message: `Pindai QR untuk menghubungkan ${profile.name}`,
+          });
+          QRCode.toFile(qrImagePath, qr, {
+            color: { dark: "#000000", light: "#FFFFFF" },
+            width: 400,
+            margin: 2,
+          }).catch(error => console.error(`[${profile.name}] Gagal menyimpan QR: ${error.message}`));
+        }
       }
 
       if (connection === "close") {
@@ -282,6 +296,7 @@ async function connectBot(profileId) {
           state: shouldReconnect ? "reconnecting" : "logged_out",
           connected: false,
           pairingCode: "",
+          qrAvailable: false,
           message: shouldReconnect
             ? `Koneksi terputus (${statusCode}), mencoba kembali`
             : "Sesi keluar; tautkan ulang dari panel",
@@ -354,6 +369,8 @@ async function connectBot(profileId) {
     updateBotStatus(profileId, {
       state: "error",
       connected: false,
+      pairingCode: "",
+      qrAvailable: false,
       message: error.message,
     });
     throw error;
@@ -398,6 +415,7 @@ async function shutdown(signal) {
       state: "offline",
       connected: false,
       pairingCode: "",
+      qrAvailable: false,
       message: `Bot dihentikan (${signal})`,
     });
   }

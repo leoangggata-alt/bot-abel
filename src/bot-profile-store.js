@@ -15,6 +15,7 @@ export const DEFAULT_BOT_PROFILES = Object.freeze({
     command: "abel",
     enabled: true,
     pairingNumber: "",
+    linkMethod: "qr",
     personality: "Feminin, hangat, ceria, kreatif, ekspresif, pandai berjualan, dan perhatian. Boleh bercanda dengan ramah tanpa merendahkan siapa pun.",
     customInstruction: "Utamakan pelayanan pelanggan, jualan, ide konten, UGC, kreativitas, dan jawaban yang terasa hangat.",
     memoryTurns: 16,
@@ -27,6 +28,7 @@ export const DEFAULT_BOT_PROFILES = Object.freeze({
     command: "arka",
     enabled: false,
     pairingNumber: "",
+    linkMethod: "qr",
     personality: "Maskulin, tenang, tegas, cerdas, analitis, protektif, dan humoris secara santai. Tidak kasar, tidak dominan, dan tetap menghormati semua anggota grup.",
     customInstruction: "Utamakan analisis, pemecahan masalah, bantuan teknis, ketertiban grup, dan humor santai. Abel adalah rekan AI-mu, bukan pengguna yang harus kamu balas otomatis.",
     memoryTurns: 16,
@@ -58,6 +60,7 @@ function normalizeProfile(id, input = {}) {
   const defaults = DEFAULT_BOT_PROFILES[id];
   if (!defaults) throw new Error(`Profil bot ${id} tidak dikenal`);
   const number = normalizePhoneNumber(input.pairingNumber ?? defaults.pairingNumber);
+  const linkMethod = input.linkMethod === "code" ? "code" : "qr";
   return {
     ...defaults,
     ...input,
@@ -67,6 +70,7 @@ function normalizeProfile(id, input = {}) {
     role: String(input.role || defaults.role).trim().slice(0, 220),
     enabled: input.enabled === undefined ? defaults.enabled : Boolean(input.enabled),
     pairingNumber: number,
+    linkMethod,
     personality: String(input.personality || defaults.personality).trim().slice(0, 2000),
     customInstruction: String(input.customInstruction || defaults.customInstruction).trim().slice(0, 3000),
     memoryTurns: Math.min(50, Math.max(0, Number(input.memoryTurns ?? defaults.memoryTurns) || 0)),
@@ -93,8 +97,8 @@ export function updateBotProfile(id, updates) {
   }
   const profiles = getBotProfiles();
   const next = normalizeProfile(id, { ...profiles[id], ...updates });
-  if (next.enabled && id === "arka" && (next.pairingNumber.length < 10 || next.pairingNumber.length > 15)) {
-    const error = new Error("Nomor WhatsApp Arka belum valid");
+  if (next.enabled && next.linkMethod === "code" && (next.pairingNumber.length < 10 || next.pairingNumber.length > 15)) {
+    const error = new Error(`Nomor WhatsApp ${next.name} belum valid untuk metode kode`);
     error.status = 400;
     throw error;
   }

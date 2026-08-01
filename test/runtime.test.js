@@ -18,7 +18,7 @@ import {
   sendBroadcastToGroups,
 } from "../src/broadcast.js";
 import { normalizeBroadcastRequest } from "../src/broadcast-store.js";
-import { normalizePhoneNumber } from "../src/bot-profile-store.js";
+import { DEFAULT_BOT_PROFILES, normalizePhoneNumber } from "../src/bot-profile-store.js";
 import { buildRealisticImagePrompt } from "../src/image.js";
 import {
   ambilPesanGambar,
@@ -183,6 +183,7 @@ test("perintah duo dapat dijawab satu kali oleh masing-masing bot", async () => 
 
 test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
   assert.equal(normalizePhoneNumber("081234567890"), "6281234567890");
+  assert.equal(DEFAULT_BOT_PROFILES.arka.linkMethod, "qr");
   const sharedSettings = {
     customInstruction: "Jawab akurat.",
     botProfile: {

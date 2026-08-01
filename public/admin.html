@@ -1399,7 +1399,7 @@
     const statuses = botDuoData?.statuses || {};
     const stateLabels = {
       connected: '● TERHUBUNG', connecting: '● MENGHUBUNGKAN', reconnecting: '● MENYAMBUNG ULANG',
-      waiting_pairing: '● PERLU PAIRING', waiting_qr: '● PERLU SCAN QR', disabled: '● NONAKTIF',
+      preparing_pairing: '● MENYIAPKAN KODE', waiting_pairing: '● PERLU PAIRING', waiting_qr: '● PERLU SCAN QR', disabled: '● NONAKTIF',
       logged_out: '● KELUAR', error: '● ERROR', pairing_error: '● PAIRING GAGAL', offline: '● OFFLINE',
     };
     grid.innerHTML = Object.entries(profiles).map(([id, profile]) => {
@@ -1438,6 +1438,13 @@
               <div class="form-group">
                 <label>Nomor WhatsApp</label>
                 <input id="bot-${id}-number" value="${escapeHtml(profile.pairingNumber)}" inputmode="numeric" placeholder="628xxxxxxxxxx"/>
+              </div>
+              <div class="form-group full">
+                <label>Metode Tautkan WhatsApp</label>
+                <select id="bot-${id}-link-method">
+                  <option value="qr" ${profile.linkMethod !== 'code' ? 'selected' : ''}>QR (pindai dari HP)</option>
+                  <option value="code" ${profile.linkMethod === 'code' ? 'selected' : ''}>Kode pairing (gunakan nomor di atas)</option>
+                </select>
               </div>
               <div class="form-group full">
                 <label>Perintah Grup</label>
@@ -1484,6 +1491,7 @@
       name,
       enabled,
       pairingNumber: document.getElementById(`bot-${id}-number`).value,
+      linkMethod: document.getElementById(`bot-${id}-link-method`).value,
       memoryTurns: Number(document.getElementById(`bot-${id}-memory`).value),
       temperature: Number(document.getElementById(`bot-${id}-temperature`).value),
       personality: document.getElementById(`bot-${id}-personality`).value,
