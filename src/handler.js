@@ -3,9 +3,10 @@
 // ============================================================
 import dotenv from "dotenv";
 import fs from "fs";
+import { downloadContentFromMessage } from "@whiskeysockets/baileys";
 dotenv.config();
 
-import { chatAI, resetAI, isNeedAI } from "./ai.js";
+import { chatAI, resetAI } from "./ai.js";
 import { kirimGambar } from "./image.js";
 import {
   prosesOrder,
@@ -32,6 +33,7 @@ const AUTO_READ = process.env.AUTO_READ !== "false";
 const AUTO_TYPING = process.env.AUTO_TYPING !== "false";
 const ANTI_SPAM = process.env.ANTI_SPAM !== "false";
 const AI_IN_GROUP = process.env.AI_IN_GROUP !== "false";
+const GROUP_MEMBER_COMMANDS = process.env.GROUP_MEMBER_COMMANDS !== "false";
 
 // Ambil deskripsi dari bahasa natural tanpa salah menangkap permintaan "prompt gambar".
 export function ambilPromptGambar(teks = "") {
@@ -57,6 +59,110 @@ export function isPermintaanQRIS(teks = "") {
   return menyebutQR && meminta;
 }
 
+function unwrapImageMessage(container = {}) {
+  return container.imageMessage ||
+    container.viewOnceMessage?.message?.imageMessage ||
+    container.viewOnceMessageV2?.message?.imageMessage ||
+    container.ephemeralMessage?.message?.imageMessage ||
+    null;
+}
+
+export function ambilTeksPesan(message = {}) {
+  const nested = message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message ||
+    message.documentWithCaptionMessage?.message ||
+    null;
+  if (nested) return ambilTeksPesan(nested);
+
+  const interactiveParams = message.interactiveResponseMessage
+    ?.nativeFlowResponseMessage?.paramsJson;
+  let interactiveText = "";
+  if (interactiveParams) {
+    try {
+      const parsed = JSON.parse(interactiveParams);
+      interactiveText = parsed.title || parsed.id || parsed.selected_id || "";
+    } catch { /* abaikan payload tombol yang tidak valid */ }
+  }
+
+  return String(
+    message.conversation ||
+    message.extendedTextMessage?.text ||
+    message.imageMessage?.caption ||
+    message.videoMessage?.caption ||
+    message.documentMessage?.caption ||
+    message.buttonsResponseMessage?.selectedDisplayText ||
+    message.buttonsResponseMessage?.selectedButtonId ||
+    message.listResponseMessage?.title ||
+    message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    message.templateButtonReplyMessage?.selectedDisplayText ||
+    message.templateButtonReplyMessage?.selectedId ||
+    interactiveText ||
+    ""
+  );
+}
+
+function getContextInfo(message = {}) {
+  return message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    null;
+}
+
+export function ambilPesanGambar(message = {}) {
+  const direct = unwrapImageMessage(message);
+  if (direct) return { imageMessage: direct, source: "direct" };
+
+  const quoted = getContextInfo(message)?.quotedMessage;
+  const quotedImage = quoted ? unwrapImageMessage(quoted) : null;
+  return quotedImage ? { imageMessage: quotedImage, source: "quoted" } : null;
+}
+
+export function ambilTeksKutipan(message = {}) {
+  const quoted = getContextInfo(message)?.quotedMessage;
+  if (!quoted) return "";
+  const text = quoted.conversation ||
+    quoted.extendedTextMessage?.text ||
+    unwrapImageMessage(quoted)?.caption ||
+    quoted.videoMessage?.caption ||
+    "";
+  return String(text).trim().slice(0, 1500);
+}
+
+export function gabungkanKonteksKutipan(text, quotedText = "") {
+  const prompt = String(text || "").trim();
+  if (!quotedText) return prompt;
+  return `${prompt}\n\nKonteks pesan yang dibalas:\n${quotedText}`;
+}
+
+export function isPermintaanMemberGrup(text = "") {
+  const value = String(text).toLowerCase().trim();
+  if (!value) return false;
+  if (value.includes("?")) return true;
+  return /^(tolong|bantu|jawab|jelaskan|terangkan|analisis|analisa|cek|periksa|cari|carikan|buat|buatkan|bikin|bikinkan|hitung|terjemahkan|translate|ringkas|rangkum|ubah|tulis|bacakan|lihat|apa|siapa|kenapa|mengapa|bagaimana|gimana|berapa|kapan|dimana|apakah|bisakah)\b/.test(value);
+}
+
+export async function downloadGambarWhatsApp(imageMessage) {
+  const stream = await downloadContentFromMessage(imageMessage, "image");
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    total += chunk.length;
+    if (total > 20 * 1024 * 1024) throw new Error("Ukuran gambar melebihi batas 20 MB");
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  if (buffer.length < 100) throw new Error("Gambar WhatsApp kosong atau rusak");
+  return buffer;
+}
+
+function promptAnalisisGambar(text = "") {
+  const cleaned = String(text)
+    .replace(/^!?(?:analisis|analisa|analyze|vision|lihat|baca|ocr)(?:\s+gambar)?\s*/i, "")
+    .trim();
+  return cleaned || "Analisis gambar ini secara teliti. Jelaskan isi yang benar-benar terlihat dan bacakan teks yang terbaca. Jika ada bagian tidak jelas, katakan dengan jujur.";
+}
+
 // ── Handler Utama ────────────────────────────────────────────
 export async function handleMessage(sock, msg) {
   try {
@@ -78,27 +184,21 @@ export async function handleMessage(sock, msg) {
 
     const isOwner = senderNum === OWNER;
     const isBotMsg = key.fromMe;
+    const imageInfo = ambilPesanGambar(message);
+    const quotedText = ambilTeksKutipan(message);
 
     // Abaikan pesan dari bot sendiri
     if (isBotMsg) return;
 
     // Ambil teks pesan (cover semua format termasuk grup & ephemeral)
-    const teks =
-      message.conversation ||
-      message.extendedTextMessage?.text ||
-      message.ephemeralMessage?.message?.extendedTextMessage?.text ||
-      message.ephemeralMessage?.message?.conversation ||
-      message.viewOnceMessage?.message?.extendedTextMessage?.text ||
-      message.imageMessage?.caption ||
-      message.videoMessage?.caption ||
-      "";
+    const teks = ambilTeksPesan(message);
 
-    if (!teks) {
+    if (!teks && !imageInfo) {
       console.log(`[SKIP] Pesan non-teks dari ${from}`);
       return;
     }
 
-    console.log(`[MSG] ${isGrup ? "Grup" : "Personal"} | ${senderNum} | "${teks.slice(0, 60)}"`);
+    console.log(`[MSG] ${isGrup ? "Grup" : "Personal"} | ${senderNum} | "${(teks || "[gambar]").slice(0, 60)}"`);
 
     // Fitur tambahan tidak boleh menggagalkan command utama saat koneksi goyah.
     if (AUTO_READ) {
@@ -125,9 +225,39 @@ export async function handleMessage(sock, msg) {
     const trimTeks = teks.trim();
     const lowerTeks = trimTeks.toLowerCase();
 
+    // Gambar langsung selalu dianalisis. Gambar kutipan dianalisis saat anggota
+    // bertanya/menyuruh melihat gambar tersebut.
+    const quotedVisionRequest = imageInfo?.source === "quoted" &&
+      (/\b(gambar|foto|image|ini|tersebut|lihat|baca|ocr|analisis|analisa)\b/i.test(trimTeks) || isPermintaanMemberGrup(trimTeks));
+    if (imageInfo && (imageInfo.source === "direct" || quotedVisionRequest)) {
+      try {
+        const imageBuffer = await downloadGambarWhatsApp(imageInfo.imageMessage);
+        const basePrompt = promptAnalisisGambar(trimTeks);
+        const prompt = gabungkanKonteksKutipan(basePrompt, quotedText);
+        const balasan = await chatAI(senderId, prompt, {
+          image: {
+            buffer: imageBuffer,
+            mimeType: imageInfo.imageMessage.mimetype || "image/jpeg",
+          },
+        });
+        await kirim(
+          sock,
+          from,
+          isGrup ? `@${senderNum} ${balasan}` : balasan,
+          isGrup ? [senderId] : []
+        );
+      } catch (error) {
+        console.error("[VISION] Gagal membaca gambar:", error.message);
+        await kirim(sock, from, isGrup
+          ? `@${senderNum} maaf, gambar itu belum berhasil dibaca. Coba kirim ulang sebagai JPG/PNG.`
+          : "Maaf, gambar belum berhasil dibaca. Coba kirim ulang sebagai JPG/PNG.", isGrup ? [senderId] : []);
+      }
+      return;
+    }
+
     // ── Cek apakah ada command dengan prefix ──────────────────
     if (trimTeks.startsWith(PREFIX)) {
-      await handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, trimTeks);
+      await handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, trimTeks, quotedText);
       return;
     }
 
@@ -162,7 +292,7 @@ export async function handleMessage(sock, msg) {
 
     // ── PERSONAL CHAT: semua pesan langsung ke AI (seperti ChatGPT) ──
     if (!isGrup) {
-      const balasan = await chatAI(senderId, trimTeks);
+      const balasan = await chatAI(senderId, gabungkanKonteksKutipan(trimTeks, quotedText));
       await kirim(sock, from, balasan);
       return;
     }
@@ -179,7 +309,9 @@ export async function handleMessage(sock, msg) {
         lowerTeks.startsWith("abel ") ||    // mulai dengan "abel"
         lowerTeks === "abel";               // hanya kata "abel"
 
-      if (diMention) {
+      const perintahMember = GROUP_MEMBER_COMMANDS && isPermintaanMemberGrup(trimTeks);
+
+      if (diMention || perintahMember) {
         const pesanBersih = teks
           .replace(/@\d+/g, "")
           .replace(/^abel\s*/i, "")
@@ -196,7 +328,10 @@ export async function handleMessage(sock, msg) {
           return;
         }
 
-        const balasan = await chatAI(senderId, pesanBersih || "halo");
+        const balasan = await chatAI(
+          senderId,
+          gabungkanKonteksKutipan(pesanBersih || trimTeks || "halo", quotedText)
+        );
         await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
         return;
       }
@@ -208,7 +343,7 @@ export async function handleMessage(sock, msg) {
 
 
 // ── Handler Command (!perintah) ──────────────────────────────
-async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, teks) {
+async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, teks, quotedText = "") {
   const args = teks.slice(PREFIX.length).trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
   const sisa = args.slice(1).join(" ");
@@ -377,6 +512,18 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       break;
 
     // ── AI ──
+    case "analisis":
+    case "analisa":
+    case "analyze":
+    case "vision":
+    case "ocr":
+      await kirim(
+        sock,
+        from,
+        "🖼️ Kirim gambar dengan caption pertanyaan, atau reply sebuah gambar lalu ketik *!analisis apa isi gambar ini?*"
+      );
+      break;
+
     case "ai":
     case "tanya":
     case "chat":
@@ -387,7 +534,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         if (promptGambar) {
           await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
         } else {
-          const balasan = await chatAI(senderId, sisa);
+          const balasan = await chatAI(senderId, gabungkanKonteksKutipan(sisa, quotedText));
           await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
         }
       }
@@ -407,7 +554,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       } else {
         const topik = sisa || "gambar kreatif";
         const promptReq = `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
-        const balasan = await chatAI(senderId, promptReq);
+        const balasan = await chatAI(senderId, gabungkanKonteksKutipan(promptReq, quotedText));
         await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
       }
       break;
@@ -490,7 +637,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       // Gabungkan cmd + sisa jadi pertanyaan ke AI
       const pertanyaan = `${cmd} ${sisa}`.trim();
       console.log(`[AI-CMD] Routing ke AI: "${pertanyaan}"`);
-      const balasan = await chatAI(senderId, pertanyaan);
+      const balasan = await chatAI(senderId, gabungkanKonteksKutipan(pertanyaan, quotedText));
       await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
     }
   }

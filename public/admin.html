@@ -571,6 +571,10 @@
             <label>URUTAN GENERATOR GAMBAR</label>
             <input id="ai-image-order" placeholder="gemini, openai, xai, seadream, leonardo, pollinations"/>
           </div>
+          <div class="full">
+            <label>URUTAN ANALISIS GAMBAR / VISION</label>
+            <input id="ai-vision-order" placeholder="openai, gemini, groq, xai"/>
+          </div>
           <div>
             <label>MEMORI PERCAKAPAN (0–50 PUTARAN)</label>
             <input id="ai-memory-turns" type="number" min="0" max="50"/>
@@ -591,6 +595,10 @@
             <div><label>CHAT — GEMINI</label><input id="model-text-gemini"/></div>
             <div><label>CHAT — GROQ</label><input id="model-text-groq"/></div>
             <div><label>CHAT — XAI / GROK</label><input id="model-text-xai"/></div>
+            <div><label>VISION — OPENAI</label><input id="model-vision-openai"/></div>
+            <div><label>VISION — GEMINI</label><input id="model-vision-gemini"/></div>
+            <div><label>VISION — GROQ</label><input id="model-vision-groq"/></div>
+            <div><label>VISION — XAI / GROK</label><input id="model-vision-xai"/></div>
             <div><label>GAMBAR — GEMINI / NANO BANANA</label><input id="model-image-gemini"/></div>
             <div><label>GAMBAR — OPENAI</label><input id="model-image-openai"/></div>
             <div><label>GAMBAR — XAI</label><input id="model-image-xai"/></div>
@@ -961,12 +969,16 @@
   function renderAISettings() {
     if (!aiSettingsData) return;
     setField('ai-text-order', (aiSettingsData.textOrder || []).join(', '));
+    setField('ai-vision-order', (aiSettingsData.visionOrder || []).join(', '));
     setField('ai-image-order', (aiSettingsData.imageOrder || []).join(', '));
     setField('ai-memory-turns', aiSettingsData.memoryTurns);
     setField('ai-temperature', aiSettingsData.temperature);
     setField('ai-custom-instruction', aiSettingsData.customInstruction);
     for (const [provider, model] of Object.entries(aiSettingsData.textModels || {})) {
       setField(`model-text-${provider}`, model);
+    }
+    for (const [provider, model] of Object.entries(aiSettingsData.visionModels || {})) {
+      setField(`model-vision-${provider}`, model);
     }
     for (const [provider, model] of Object.entries(aiSettingsData.imageModels || {})) {
       setField(`model-image-${provider}`, model);
@@ -983,6 +995,7 @@
   async function saveAISettings() {
     const data = {
       textOrder: splitOrder('ai-text-order'),
+      visionOrder: splitOrder('ai-vision-order'),
       imageOrder: splitOrder('ai-image-order'),
       memoryTurns: Number(document.getElementById('ai-memory-turns').value),
       temperature: Number(document.getElementById('ai-temperature').value),
@@ -992,6 +1005,12 @@
         gemini: document.getElementById('model-text-gemini').value,
         groq: document.getElementById('model-text-groq').value,
         xai: document.getElementById('model-text-xai').value,
+      },
+      visionModels: {
+        openai: document.getElementById('model-vision-openai').value,
+        gemini: document.getElementById('model-vision-gemini').value,
+        groq: document.getElementById('model-vision-groq').value,
+        xai: document.getElementById('model-vision-xai').value,
       },
       imageModels: {
         gemini: document.getElementById('model-image-gemini').value,

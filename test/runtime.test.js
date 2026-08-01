@@ -4,9 +4,16 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { chatAI, isCreatorQuestion } from "../src/ai.js";
+import { chatAI, isCreatorQuestion, normalizeVisionInput } from "../src/ai.js";
 import { normalizeAISettings } from "../src/ai-settings.js";
-import { isPermintaanQRIS } from "../src/handler.js";
+import {
+  ambilPesanGambar,
+  ambilTeksPesan,
+  ambilTeksKutipan,
+  gabungkanKonteksKutipan,
+  isPermintaanMemberGrup,
+  isPermintaanQRIS,
+} from "../src/handler.js";
 import { kirimQRIS } from "../src/order.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,13 +44,56 @@ test("pengaturan panel dinormalisasi dengan aman", () => {
   const settings = normalizeAISettings({
     textOrder: "xai,openai,xai,bukan-provider",
     imageOrder: ["gemini", "openai", "pollinations"],
+    visionOrder: ["groq", "gemini", "groq"],
     memoryTurns: 99,
     temperature: -5,
   });
   assert.deepEqual(settings.textOrder, ["xai", "openai"]);
   assert.deepEqual(settings.imageOrder, ["gemini", "openai", "pollinations"]);
+  assert.deepEqual(settings.visionOrder, ["groq", "gemini"]);
   assert.equal(settings.memoryTurns, 50);
   assert.equal(settings.temperature, 0);
+});
+
+test("perintah member grup dikenali tanpa membalas obrolan biasa", () => {
+  assert.equal(isPermintaanMemberGrup("tolong jelaskan cara kerjanya"), true);
+  assert.equal(isPermintaanMemberGrup("berapa hasil 12 x 8?"), true);
+  assert.equal(isPermintaanMemberGrup("lagi ngopi nih teman-teman"), false);
+});
+
+test("gambar langsung, gambar kutipan, dan konteks reply dikenali", () => {
+  assert.equal(ambilPesanGambar({ imageMessage: { mimetype: "image/jpeg" } }).source, "direct");
+  const replied = {
+    extendedTextMessage: {
+      text: "apa isi gambar ini?",
+      contextInfo: {
+        quotedMessage: { imageMessage: { mimetype: "image/png", caption: "nota belanja" } },
+      },
+    },
+  };
+  assert.equal(ambilPesanGambar(replied).source, "quoted");
+  assert.equal(ambilTeksKutipan(replied), "nota belanja");
+  assert.match(gabungkanKonteksKutipan("jelaskan", "pesan lama"), /pesan lama/);
+});
+
+test("format chat WhatsApp umum terbaca", () => {
+  assert.equal(ambilTeksPesan({ conversation: "halo" }), "halo");
+  assert.equal(ambilTeksPesan({ imageMessage: { caption: "cek foto ini" } }), "cek foto ini");
+  assert.equal(
+    ambilTeksPesan({ ephemeralMessage: { message: { extendedTextMessage: { text: "pesan sementara" } } } }),
+    "pesan sementara"
+  );
+  assert.equal(
+    ambilTeksPesan({ buttonsResponseMessage: { selectedDisplayText: "Lihat harga" } }),
+    "Lihat harga"
+  );
+});
+
+test("input vision divalidasi dan diubah ke base64", () => {
+  const image = normalizeVisionInput({ buffer: Buffer.alloc(256, 1), mimeType: "image/png" });
+  assert.equal(image.mimeType, "image/png");
+  assert.ok(image.base64.length > 100);
+  assert.throws(() => normalizeVisionInput({ buffer: Buffer.alloc(10), mimeType: "image/png" }));
 });
 
 test("JavaScript panel admin valid", () => {
@@ -52,4 +102,3 @@ test("JavaScript panel admin valid", () => {
   assert.ok(scripts.length > 0);
   for (const script of scripts) new Function(script[1]);
 });
-

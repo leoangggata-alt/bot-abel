@@ -24,8 +24,13 @@ function buildSystemPrompt(settings) {
 - Owner: ${process.env.OWNER_NAME || "Admin"}
 
 ## PERILAKU
+- Utamakan ketepatan. Jangan mengarang fakta, angka, teks, nama, atau detail yang tidak terlihat/diketahui.
+- Bedakan pengamatan dengan dugaan. Jika kurang yakin, katakan bagian yang tidak pasti dan minta klarifikasi.
+- Baca pesan pengguna, caption, dan konteks pesan yang dibalas sebagai satu kesatuan.
+- Saat menganalisis gambar, periksa objek, teks, jumlah, warna, posisi, dan konteks secara teliti. Jangan mengaku membaca teks yang buram.
 - Jawab ringkas tetapi lengkap; gunakan poin bila membantu.
 - Ingat konteks percakapan yang diberikan.
+- Anggota grup boleh memberi pertanyaan dan perintah. Ikuti perintah yang aman dan masih dalam kemampuan bot.
 - Jika diminta membuat gambar, jangan hanya memberi prompt; sistem bot akan menangani generator gambar sebelum chat ini.
 - Tolak secara sopan permintaan berbahaya atau ilegal.
 - Jika tidak yakin, jelaskan batas kepastian dengan singkat.${custom}`;
@@ -84,6 +89,61 @@ function requireCandidates(provider) {
   return candidates;
 }
 
+export function normalizeVisionInput(image) {
+  if (!image) return null;
+  const buffer = Buffer.isBuffer(image) ? image : image.buffer;
+  const mimeType = String(image.mimeType || image.mimetype || "image/jpeg").toLowerCase();
+  if (!Buffer.isBuffer(buffer) || buffer.length < 100) {
+    throw new Error("Data gambar tidak valid");
+  }
+  if (buffer.length > 20 * 1024 * 1024) {
+    throw new Error("Ukuran gambar melebihi batas 20 MB");
+  }
+  if (!/^image\/(jpeg|jpg|png|webp)$/.test(mimeType)) {
+    throw new Error(`Format gambar ${mimeType} belum didukung`);
+  }
+  return {
+    buffer,
+    mimeType: mimeType === "image/jpg" ? "image/jpeg" : mimeType,
+    base64: buffer.toString("base64"),
+  };
+}
+
+function visionDataUrl(image) {
+  return `data:${image.mimeType};base64,${image.base64}`;
+}
+
+function withOpenAIVision(messages, image) {
+  if (!image) return messages;
+  return [
+    ...messages.slice(0, -1),
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text: messages.at(-1)?.content || "Analisis gambar ini." },
+        { type: "input_image", image_url: visionDataUrl(image), detail: "auto" },
+      ],
+    },
+  ];
+}
+
+function withCompatibleVision(messages, image) {
+  if (!image) return messages;
+  return [
+    ...messages.slice(0, -1),
+    {
+      role: "user",
+      content: [
+        { type: "text", text: messages.at(-1)?.content || "Analisis gambar ini." },
+        {
+          type: "image_url",
+          image_url: { url: visionDataUrl(image), detail: "auto" },
+        },
+      ],
+    },
+  ];
+}
+
 function openAIText(json) {
   if (typeof json.output_text === "string" && json.output_text.trim()) return json.output_text.trim();
   return (json.output || [])
@@ -94,7 +154,8 @@ function openAIText(json) {
     .trim();
 }
 
-async function callOpenAI(messages, userId, settings) {
+async function callOpenAI(messages, userId, settings, image = null) {
+  const model = image ? settings.visionModels.openai : settings.textModels.openai;
   let lastError;
   for (const [index, candidate] of requireCandidates("openai").entries()) {
     try {
@@ -103,9 +164,9 @@ async function callOpenAI(messages, userId, settings) {
         "/v1/responses",
         { Authorization: `Bearer ${candidate.key}` },
         {
-          model: settings.textModels.openai,
+          model,
           instructions: buildSystemPrompt(settings),
-          input: messages,
+          input: withOpenAIVision(messages, image),
           max_output_tokens: 900,
           store: false,
           safety_identifier: crypto.createHash("sha256").update(String(userId)).digest("hex"),
@@ -113,7 +174,7 @@ async function callOpenAI(messages, userId, settings) {
       );
       const text = openAIText(json);
       if (status >= 200 && status < 300 && text) {
-        console.log(`[AI] OpenAI/${settings.textModels.openai} slot ${index + 1}`);
+        console.log(`[AI] OpenAI/${model}${image ? " vision" : ""} slot ${index + 1}`);
         return text;
       }
       lastError = providerError("OpenAI", status, json);
@@ -125,9 +186,11 @@ async function callOpenAI(messages, userId, settings) {
   throw lastError || new Error("OpenAI gagal");
 }
 
-async function callOpenAICompatible(provider, hostname, path, messages, settings) {
-  const configured = settings.textModels[provider];
-  const modelFallbacks = provider === "groq"
+async function callOpenAICompatible(provider, hostname, path, messages, settings, image = null) {
+  const configured = image ? settings.visionModels[provider] : settings.textModels[provider];
+  const modelFallbacks = image
+    ? [configured]
+    : provider === "groq"
     ? [configured, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b"]
     : [configured];
   const models = [...new Set(modelFallbacks.filter(Boolean))];
@@ -142,14 +205,17 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
           { Authorization: `Bearer ${candidate.key}` },
           {
             model,
-            messages: [{ role: "system", content: buildSystemPrompt(settings) }, ...messages],
+            messages: [
+              { role: "system", content: buildSystemPrompt(settings) },
+              ...withCompatibleVision(messages, image),
+            ],
             max_tokens: 900,
             temperature: settings.temperature,
           }
         );
         const text = json.choices?.[0]?.message?.content?.trim();
         if (status >= 200 && status < 300 && text) {
-          console.log(`[AI] ${provider}/${model} slot ${keyIndex + 1}`);
+          console.log(`[AI] ${provider}/${model}${image ? " vision" : ""} slot ${keyIndex + 1}`);
           return text;
         }
         lastError = providerError(provider, status, json);
@@ -162,16 +228,21 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
   throw lastError || new Error(`${provider} gagal`);
 }
 
-async function callGemini(messages, settings) {
-  const contents = messages.map(message => ({
+async function callGemini(messages, settings, image = null) {
+  const contents = messages.map((message, index) => ({
     role: message.role === "assistant" ? "model" : "user",
-    parts: [{ text: message.content }],
+    parts: image && index === messages.length - 1
+      ? [
+          { text: message.content },
+          { inline_data: { mime_type: image.mimeType, data: image.base64 } },
+        ]
+      : [{ text: message.content }],
   }));
   let lastError;
 
   for (const [index, candidate] of requireCandidates("gemini").entries()) {
     try {
-      const model = settings.textModels.gemini;
+      const model = image ? settings.visionModels.gemini : settings.textModels.gemini;
       const { status, json } = await httpPost(
         "generativelanguage.googleapis.com",
         `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(candidate.key)}`,
@@ -187,7 +258,7 @@ async function callGemini(messages, settings) {
         .join("\n")
         .trim();
       if (status >= 200 && status < 300 && text) {
-        console.log(`[AI] Gemini/${model} slot ${index + 1}`);
+        console.log(`[AI] Gemini/${model}${image ? " vision" : ""} slot ${index + 1}`);
         return text;
       }
       lastError = providerError("Gemini", status, json);
@@ -199,30 +270,35 @@ async function callGemini(messages, settings) {
   throw lastError || new Error("Gemini gagal");
 }
 
-async function callProvider(provider, messages, userId, settings) {
+async function callProvider(provider, messages, userId, settings, image = null) {
   switch (provider) {
-    case "openai": return callOpenAI(messages, userId, settings);
-    case "gemini": return callGemini(messages, settings);
-    case "groq": return callOpenAICompatible("groq", "api.groq.com", "/openai/v1/chat/completions", messages, settings);
-    case "xai": return callOpenAICompatible("xai", "api.x.ai", "/v1/chat/completions", messages, settings);
+    case "openai": return callOpenAI(messages, userId, settings, image);
+    case "gemini": return callGemini(messages, settings, image);
+    case "groq": return callOpenAICompatible("groq", "api.groq.com", "/openai/v1/chat/completions", messages, settings, image);
+    case "xai": return callOpenAICompatible("xai", "api.x.ai", "/v1/chat/completions", messages, settings, image);
     default: throw new Error(`Provider teks ${provider} tidak dikenal`);
   }
 }
 
-export async function chatAI(userId, pesan) {
+export async function chatAI(userId, pesan, options = {}) {
   if (isCreatorQuestion(pesan)) return "Saya diciptakan oleh ABEL-LAB.";
 
   try {
     const settings = getAISettings();
+    const image = normalizeVisionInput(options.image || null);
     if (!history[userId]) history[userId] = [];
     const userHistory = history[userId];
-    const messages = [...userHistory, { role: "user", content: pesan }];
+    const providerPrompt = image
+      ? `INSTRUKSI AKURASI VISUAL: Periksa gambar sebelum menjawab. Jangan menebak atau melengkapi detail yang tidak terlihat. Untuk teks, angka, QR, nota, dan identitas, tulis hanya yang benar-benar terbaca. Jika tidak cukup jelas, katakan tidak terbaca/tidak yakin.\n\nPERMINTAAN PENGGUNA:\n${pesan}`
+      : pesan;
+    const messages = [...userHistory, { role: "user", content: providerPrompt }];
     let balasan = "";
     let lastError;
 
-    for (const provider of settings.textOrder) {
+    const providerOrder = image ? settings.visionOrder : settings.textOrder;
+    for (const provider of providerOrder) {
       try {
-        balasan = await callProvider(provider, messages, userId, settings);
+        balasan = await callProvider(provider, messages, userId, settings, image);
         if (balasan) break;
       } catch (error) {
         lastError = error;
@@ -232,7 +308,10 @@ export async function chatAI(userId, pesan) {
     if (!balasan) throw lastError || new Error("Semua provider teks gagal");
 
     if (settings.memoryTurns > 0) {
-      userHistory.push({ role: "user", content: pesan });
+      userHistory.push({
+        role: "user",
+        content: image ? `[Pengguna mengirim gambar] ${pesan}` : pesan,
+      });
       userHistory.push({ role: "assistant", content: balasan });
       const maxMessages = settings.memoryTurns * 2;
       if (userHistory.length > maxMessages) history[userId] = userHistory.slice(-maxMessages);
@@ -243,7 +322,9 @@ export async function chatAI(userId, pesan) {
     return balasan;
   } catch (error) {
     console.error("[AI Error]", error.message);
-    return "Ups, semua otak Abel sedang tidak tersedia. Periksa status API key di panel admin lalu coba lagi ya.";
+    return options.image
+      ? "Maaf, gambar belum berhasil dianalisis. Periksa key/model Vision di panel admin lalu coba kirim ulang."
+      : "Ups, semua otak Abel sedang tidak tersedia. Periksa status API key di panel admin lalu coba lagi ya.";
   }
 }
 

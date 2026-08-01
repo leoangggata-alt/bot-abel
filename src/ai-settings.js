@@ -14,9 +14,11 @@ const IMAGE_PROVIDERS = [
   "leonardo",
   "pollinations",
 ];
+const VISION_PROVIDERS = ["openai", "gemini", "groq", "xai"];
 
 export const DEFAULT_AI_SETTINGS = Object.freeze({
   textOrder: ["openai", "gemini", "groq", "xai"],
+  visionOrder: ["openai", "gemini", "groq", "xai"],
   imageOrder: ["gemini", "openai", "xai", "seadream", "leonardo", "pollinations"],
   memoryTurns: 10,
   temperature: 0.8,
@@ -26,6 +28,12 @@ export const DEFAULT_AI_SETTINGS = Object.freeze({
     gemini: process.env.GEMINI_TEXT_MODEL || "gemini-3.6-flash",
     groq: process.env.GROQ_TEXT_MODEL || "llama-3.3-70b-versatile",
     xai: process.env.XAI_TEXT_MODEL || "grok-4.3",
+  },
+  visionModels: {
+    openai: process.env.OPENAI_VISION_MODEL || "gpt-5.6-sol",
+    gemini: process.env.GEMINI_VISION_MODEL || "gemini-3.6-flash",
+    groq: process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b",
+    xai: process.env.XAI_VISION_MODEL || "grok-4.5",
   },
   imageModels: {
     gemini: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
@@ -68,11 +76,13 @@ export function normalizeAISettings(value = {}) {
 
   return {
     textOrder: normalizeOrder(source.textOrder, TEXT_PROVIDERS, defaults.textOrder),
+    visionOrder: normalizeOrder(source.visionOrder, VISION_PROVIDERS, defaults.visionOrder),
     imageOrder: normalizeOrder(source.imageOrder, IMAGE_PROVIDERS, defaults.imageOrder),
     memoryTurns: Number.isFinite(memoryTurns) ? Math.min(50, Math.max(0, memoryTurns)) : defaults.memoryTurns,
     temperature: Number.isFinite(temperature) ? Math.min(2, Math.max(0, temperature)) : defaults.temperature,
     customInstruction: String(source.customInstruction || "").trim().slice(0, 4000),
     textModels: normalizeModelMap(source.textModels, defaults.textModels),
+    visionModels: normalizeModelMap(source.visionModels, defaults.visionModels),
     imageModels: normalizeModelMap(source.imageModels, defaults.imageModels),
   };
 }
@@ -93,6 +103,7 @@ export function updateAISettings(changes = {}) {
     ...current,
     ...changes,
     textModels: { ...current.textModels, ...(changes.textModels || {}) },
+    visionModels: { ...current.visionModels, ...(changes.visionModels || {}) },
     imageModels: { ...current.imageModels, ...(changes.imageModels || {}) },
   });
 
