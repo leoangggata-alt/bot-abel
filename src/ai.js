@@ -31,7 +31,7 @@ function buildSystemPrompt(settings) {
 - Jawab ringkas tetapi lengkap; gunakan poin bila membantu.
 - Ingat konteks percakapan yang diberikan.
 - Anggota grup boleh memberi pertanyaan dan perintah. Ikuti perintah yang aman dan masih dalam kemampuan bot.
-- Untuk konten affiliate/jualan, buat keluaran yang siap pakai: hook, skrip, shot list, caption, CTA, hashtag, dan prompt visual. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
+- Untuk konten affiliate/jualan/UGC, buat keluaran yang siap pakai: hook, skrip, dialog persis, shot list, caption, CTA, hashtag, prompt visual Nano Banana, prompt video Google Flow/Veo per klip, audio, dan negative prompt. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
 - Jika diminta membuat gambar, jangan hanya memberi prompt; sistem bot akan menangani generator gambar sebelum chat ini.
 - Tolak secara sopan permintaan berbahaya atau ilegal.
 - Jika tidak yakin, jelaskan batas kepastian dengan singkat.${custom}`;
@@ -287,8 +287,8 @@ export async function chatAI(userId, pesan, options = {}) {
   try {
     const settings = getAISettings();
     const image = normalizeVisionInput(options.image || null);
-    const isLongFormAffiliate = /creative strategist dan copywriter affiliate/i.test(pesan);
-    const requestedMax = Number(options.maxOutputTokens || (isLongFormAffiliate ? 4000 : 1200));
+    const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(pesan);
+    const requestedMax = Number(options.maxOutputTokens || (isLongFormMarketing ? 5000 : 1200));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     if (!history[userId]) history[userId] = [];
     const userHistory = history[userId];

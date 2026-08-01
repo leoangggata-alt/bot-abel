@@ -60,6 +60,7 @@ Berikut daftar perintah yang tersedia:
 ├ ${PREFIX}faq - Pertanyaan umum
 ├ ${PREFIX}ai [pesan] - Tanya AI kami
 ├ ${PREFIX}gambar [deskripsi] - Buat gambar Nano Banana Pro
+├ ${PREFIX}ugc [produk] - Prompt UGC + dialog + Flow/Veo
 ├ ${PREFIX}affiliate [produk] - Prompt konten jualan lengkap
 └ ${PREFIX}reset - Reset percakapan AI
 

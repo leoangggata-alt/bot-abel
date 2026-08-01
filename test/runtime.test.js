@@ -12,9 +12,11 @@ import {
   ambilTeksPesan,
   ambilTeksKutipan,
   buildAffiliatePromptRequest,
+  buildUGCPromptRequest,
   gabungkanKonteksKutipan,
   isPermintaanMemberGrup,
   isPermintaanPromptAffiliate,
+  isPermintaanPromptUGC,
   isPermintaanQRIS,
 } from "../src/handler.js";
 import { kirimQRIS } from "../src/order.js";
@@ -73,6 +75,20 @@ test("prompt konten affiliate dikenali dan disusun lengkap", () => {
   assert.match(request, /Shot list/);
   assert.match(request, /Nano Banana Pro/);
   assert.match(request, /Jangan membuat klaim medis/);
+});
+
+test("prompt UGC siap salin memuat dialog, Flow, dan negative prompt", () => {
+  assert.equal(isPermintaanPromptUGC("buat prompt UGC untuk video affiliate"), true);
+  assert.equal(isPermintaanPromptUGC("ugc botol minum untuk mahasiswa"), true);
+  assert.equal(isPermintaanPromptUGC("buat promt detail ugc beserta dialog"), true);
+  assert.equal(isPermintaanPromptUGC("apa arti singkatan UGC"), false);
+  const request = buildUGCPromptRequest("botol minum untuk mahasiswa di TikTok");
+  assert.match(request, /CHARACTER LOCK/);
+  assert.match(request, /PROMPT NANO BANANA PRO/);
+  assert.match(request, /PROMPT GOOGLE FLOW \/ VEO/);
+  assert.match(request, /Talent says in Indonesian/);
+  assert.match(request, /NEGATIVE PROMPT FLOW\/VEO/);
+  assert.match(request, /tanpa kata no\/don't\/jangan\/tidak/);
 });
 
 test("prompt gambar otomatis ditingkatkan untuk hasil realistis", () => {

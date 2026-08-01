@@ -55,13 +55,26 @@ export function ambilPromptGambar(teks = "") {
 export function isPermintaanPromptAffiliate(teks = "") {
   const nilai = String(teks).toLowerCase().trim();
   const menyebutAffiliate = /\b(?:affiliate|afiliasi|affiliator)\b/.test(nilai);
-  const memintaKonten = /\b(?:prompt|konten|content|skrip|script|naskah|caption|hook|ide|jualan|promosi|iklan|ugc|video)\b/.test(nilai);
+  const memintaKonten = /\b(?:prompt|promt|konten|content|skrip|script|naskah|caption|hook|ide|jualan|promosi|iklan|ugc|video)\b/.test(nilai);
   return menyebutAffiliate && memintaKonten;
+}
+
+export function isPermintaanPromptUGC(teks = "") {
+  const nilai = String(teks).toLowerCase().trim();
+  const menyebutUGC = /\bugc\b/.test(nilai);
+  const memintaPaket = /\b(?:prompt|promt|konten|content|skrip|script|naskah|dialog|video|iklan|affiliate|afiliasi|jualan|flow|veo|nano banana)\b/.test(nilai);
+  const formatLangsung = /^ugc\b\s+\S/.test(nilai);
+  return menyebutUGC && (memintaPaket || formatLangsung);
 }
 
 export function buildAffiliatePromptRequest(request = "") {
   const kebutuhan = String(request || "").trim().slice(0, 2500) || "produk yang ingin dipromosikan";
   return `Bertindak sebagai creative strategist dan copywriter affiliate Indonesia. Buat paket konten jualan yang detail, praktis, dan langsung dapat dipakai berdasarkan kebutuhan berikut:\n\n${kebutuhan}\n\nWajib berikan dengan struktur:\n1. Ringkasan produk, target audiens, masalah audiens, dan angle penjualan utama.\n2. Lima hook pembuka yang kuat tetapi tidak menipu.\n3. Skrip video affiliate 30-45 detik: hook, masalah, demo/manfaat, bukti yang boleh disebut, CTA.\n4. Shot list per adegan lengkap dengan visual, aksi talent, dialog/voice-over, teks layar, durasi, dan transisi.\n5. Caption versi soft selling dan hard selling.\n6. CTA serta 10 hashtag relevan.\n7. Prompt visual siap salin untuk Nano Banana Pro dalam format vertikal 9:16, fotorealistis, termasuk subjek, produk, lokasi, komposisi, kamera, pencahayaan, warna, mood, dan negative constraints.\n8. Tiga variasi angle konten untuk A/B test.\n\nGunakan bahasa Indonesia natural. Jangan membuat klaim medis, jaminan hasil, harga, diskon, testimoni, atau spesifikasi yang tidak diberikan pengguna. Jika data produk kurang, tandai bagian yang harus diisi dengan [ISI DATA]. Jangan beri pembukaan panjang.`;
+}
+
+export function buildUGCPromptRequest(request = "") {
+  const kebutuhan = String(request || "").trim().slice(0, 3000) || "produk yang ingin dibuatkan konten UGC";
+  return `Bertindak sebagai sutradara UGC, creative strategist affiliate, prompt engineer Nano Banana Pro, dan prompt engineer Google Flow/Veo. Buat PAKET UGC SIAP COPY-PASTE berdasarkan kebutuhan berikut:\n\n${kebutuhan}\n\nTujuan utama: prompt harus sangat spesifik, realistis, konsisten antaradegan, mudah ditempel langsung ke Nano Banana atau Google Flow, dan memiliki dialog bahasa Indonesia yang natural serta cukup pendek untuk durasi klip.\n\nGunakan struktur wajib berikut:\n\nA. DATA PRODUK & STRATEGI\n- Produk, target audiens, masalah, manfaat yang benar-benar diberikan pengguna, angle, platform, gaya penyampaian, CTA.\n- Data yang belum ada wajib ditulis [ISI DATA], bukan dikarang.\n\nB. CHARACTER LOCK\n- Satu paragraf identitas talent yang sangat rinci dan harus diulang PERSIS pada setiap prompt: perkiraan usia dewasa, ciri wajah, warna kulit, rambut, pakaian, aksesori, bentuk tubuh secara netral, karakter suara, aksen Indonesia, energi, dan gestur.\n- Sertakan PRODUCT LOCK: bentuk, bahan, warna, kemasan, label, ukuran relatif, serta posisi produk. Gunakan [ISI DATA] jika belum diketahui.\n\nC. ALUR UGC 30-45 DETIK\n- Buat 5-6 adegan berurutan: hook, masalah, perkenalan produk, demo, manfaat/bukti yang sah, CTA.\n- Tabel berisi nomor adegan, durasi, tujuan, visual, aksi, framing/gerak kamera, dialog persis, teks layar opsional, ambience/SFX, dan transisi.\n- Dialog harus terdengar seperti orang Indonesia asli, bukan bahasa iklan kaku. Maksimal 12-18 kata untuk klip 8 detik. Jangan menaruh dua pembicara dalam satu klip kecuali diminta.\n\nD. PROMPT NANO BANANA PRO — COPY-PASTE\n- Buat satu prompt gambar master berbahasa Inggris untuk key visual/first frame vertikal 9:16, realistic smartphone UGC, natural skin texture, authentic home/studio setting, exact character lock, exact product lock, camera/lens, composition, lighting, color, mood, hand placement, label orientation, dan ruang aman untuk teks.\n- Dialog tidak dimasukkan ke gambar. Teks pada gambar hanya bila pengguna memberi kata-kata persis.\n- Setelahnya berikan NEGATIVE PROMPT NANO BANANA sebagai daftar dipisahkan koma, tanpa kata no/don't/jangan/tidak.\n\nE. PROMPT GOOGLE FLOW / VEO — COPY-PASTE PER KLIP\n- Untuk SETIAP adegan buat blok prompt mandiri berbahasa Inggris, cocok untuk video vertikal 9:16 berdurasi 8 detik.\n- Ulangi CHARACTER LOCK dan PRODUCT LOCK secara konsisten di setiap blok.\n- Susun urutan: format/style, subject, location, framing, camera motion, action timeline, lighting, then exact dialogue.\n- Format dialog persis: Talent says in Indonesian with natural [tone] delivery: \"dialog\".\n- Buat bagian Audio terpisah: voice character, room ambience, SFX, music level, clean foreground speech, accurate lip sync.\n- Hindari perpindahan lokasi atau terlalu banyak aksi dalam satu klip.\n- Setelah setiap prompt, tulis NEGATIVE PROMPT FLOW/VEO sebagai daftar unsur yang tidak diinginkan, dipisahkan koma, tanpa kata no/don't/jangan/tidak. Negative prompt wajib mencakup sesuai konteks: malformed hands, extra fingers, duplicate product, warped packaging, altered label, inconsistent face, changing clothes, robotic delivery, mismatched lip sync, overlapping voices, background speech, subtitles, captions, random text, watermark, logo artifacts, flicker, temporal inconsistency, jump cuts, excessive camera shake, beauty filter, plastic skin, oversharpening.\n\nF. MASTER DIALOG — COPY-PASTE\n- Tulis seluruh dialog saja, per adegan, tanpa arahan visual agar mudah direkam sebagai voice-over.\n\nG. CAPTION & CTA\n- Caption soft selling, caption hard selling, CTA, dan 10 hashtag relevan.\n\nAturan akurasi:\n- Jangan membuat klaim medis, hasil terjamin, harga, diskon, testimoni, sertifikasi, bahan, atau spesifikasi yang tidak diberikan.\n- Jangan menyatakan talent sudah memakai produk jika informasi itu tidak diberikan; gunakan framing demonstrasi yang jujur.\n- Prompt visual/video ditulis dalam bahasa Inggris untuk hasil Flow yang lebih konsisten, tetapi semua dialog dan teks layar tetap bahasa Indonesia.\n- Jangan beri pembukaan panjang. Berikan blok kode terpisah agar setiap prompt mudah disalin.`;
 }
 
 export function isPermintaanQRIS(teks = "") {
@@ -151,7 +164,7 @@ export function isPermintaanMemberGrup(text = "") {
   const value = String(text).toLowerCase().trim();
   if (!value) return false;
   if (value.includes("?")) return true;
-  return /^(tolong|bantu|jawab|jelaskan|terangkan|analisis|analisa|cek|periksa|cari|carikan|buat|buatkan|bikin|bikinkan|hitung|terjemahkan|translate|ringkas|rangkum|ubah|tulis|bacakan|lihat|apa|siapa|kenapa|mengapa|bagaimana|gimana|berapa|kapan|dimana|apakah|bisakah)\b/.test(value);
+  return /^(tolong|bantu|jawab|jelaskan|terangkan|analisis|analisa|cek|periksa|cari|carikan|buat|buatkan|bikin|bikinkan|hitung|terjemahkan|translate|ringkas|rangkum|ubah|tulis|bacakan|lihat|ugc|affiliate|afiliasi|apa|siapa|kenapa|mengapa|bagaimana|gimana|berapa|kapan|dimana|apakah|bisakah)\b/.test(value);
 }
 
 export async function downloadGambarWhatsApp(imageMessage) {
@@ -302,6 +315,12 @@ export async function handleMessage(sock, msg) {
       }
     }
 
+    if (!isGrup && isPermintaanPromptUGC(trimTeks)) {
+      const balasan = await chatAI(senderId, buildUGCPromptRequest(trimTeks));
+      await kirim(sock, from, balasan);
+      return;
+    }
+
     if (!isGrup && isPermintaanPromptAffiliate(trimTeks)) {
       const balasan = await chatAI(senderId, buildAffiliatePromptRequest(trimTeks));
       await kirim(sock, from, balasan);
@@ -343,6 +362,15 @@ export async function handleMessage(sock, msg) {
             promptGambar,
             `@${senderNum} 🎨 Ini gambarnya!`
           );
+          return;
+        }
+
+        if (isPermintaanPromptUGC(pesanBersih)) {
+          const balasan = await chatAI(
+            senderId,
+            gabungkanKonteksKutipan(buildUGCPromptRequest(pesanBersih), quotedText)
+          );
+          await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
           return;
         }
 
@@ -561,12 +589,32 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         if (promptGambar) {
           await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
         } else {
-          const aiRequest = isPermintaanPromptAffiliate(sisa)
-            ? buildAffiliatePromptRequest(sisa)
-            : sisa;
+          const aiRequest = isPermintaanPromptUGC(sisa)
+            ? buildUGCPromptRequest(sisa)
+            : isPermintaanPromptAffiliate(sisa)
+              ? buildAffiliatePromptRequest(sisa)
+              : sisa;
           const balasan = await chatAI(senderId, gabungkanKonteksKutipan(aiRequest, quotedText));
           await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
         }
+      }
+      break;
+
+    case "ugc":
+    case "promptugc":
+    case "ugcvideo":
+      if (!sisa) {
+        await kirim(
+          sock,
+          from,
+          `🎬 *Prompt UGC Siap Copy-Paste*\n\nCara pakai:\n*${PREFIX}ugc [produk + target + platform + gaya]*\n\nContoh:\n*${PREFIX}ugc botol minum olahraga, target mahasiswa, TikTok 35 detik, gaya review jujur di kamar kos*\n\nHasil mencakup dialog, Nano Banana Pro, Google Flow/Veo per klip, audio, dan negative prompt.`
+        );
+      } else {
+        const balasan = await chatAI(
+          senderId,
+          gabungkanKonteksKutipan(buildUGCPromptRequest(sisa), quotedText)
+        );
+        await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
       }
       break;
 
@@ -601,9 +649,12 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
       } else {
         const topik = sisa || "gambar kreatif";
-        const promptReq = isPermintaanPromptAffiliate(`${cmd} ${sisa}`)
-          ? buildAffiliatePromptRequest(`${cmd} ${sisa}`)
-          : `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
+        const permintaan = `${cmd} ${sisa}`;
+        const promptReq = isPermintaanPromptUGC(permintaan)
+          ? buildUGCPromptRequest(permintaan)
+          : isPermintaanPromptAffiliate(permintaan)
+            ? buildAffiliatePromptRequest(permintaan)
+            : `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
         const balasan = await chatAI(senderId, gabungkanKonteksKutipan(promptReq, quotedText));
         await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
       }
