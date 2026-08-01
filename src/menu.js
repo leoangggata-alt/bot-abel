@@ -83,10 +83,9 @@ export function infoToko() {
 ├ GoPay/OVO/Dana: *08xxx*
 └ QRIS: tersedia
 
-🚚 *Pengiriman:*
-├ JNE, J&T, SiCepat
-├ Estimasi: 2–5 hari kerja
-└ Gratis ongkir min. Rp200.000
+📩 *Pengiriman Produk Digital:*
+├ Dikirim melalui chat/email sesuai jenis produk
+└ Tidak ada biaya ongkir
 
 _Terima kasih sudah menghubungi kami!_ 🙏`;
 }
@@ -179,7 +178,6 @@ export function infoPromo() {
   return `🎉 *PROMO SPESIAL BULAN INI!*
 
 🔥 *Diskon 20%* untuk pembelian pertama
-🚚 *Gratis ongkir* min. pembelian Rp200.000  
 🎁 *Beli 2 Gratis 1* untuk Produk A1
 ⚡ *Flash Sale* setiap Jumat jam 12.00 WIB
 
@@ -198,13 +196,13 @@ export function caraPesan() {
 1️⃣ Pilih produk dari katalog (${PREFIX}produk)
 2️⃣ Beritahu kami:
    • Nama lengkap
-   • Alamat pengiriman
+   • Nomor/email tujuan bila dibutuhkan
    • Produk & jumlah yang dipesan
 
 3️⃣ Kami kirim invoice & nominal
 4️⃣ Lakukan pembayaran
 5️⃣ Kirim bukti transfer
-6️⃣ Pesanan diproses & dikirim ✅
+6️⃣ Produk digital diproses & dikirim ✅
 
 _Estimasi respon: 5–15 menit_
 _Jam kerja: Senin–Sabtu 08.00–17.00 WIB_ 🕐`;
@@ -215,7 +213,7 @@ export function faq() {
   return `❓ *FAQ - Pertanyaan Umum*
 
 *Q: Berapa lama pengiriman?*
-A: 2–5 hari kerja tergantung lokasi 📦
+A: Produk digital dikirim setelah pembayaran diverifikasi, sesuai estimasi pada deskripsi produk 📦
 
 *Q: Apakah ada garansi?*
 A: Ya, garansi 1 tahun untuk kerusakan pabrik 🛡️

@@ -22,7 +22,24 @@ function bacaProduk() {
 function bacaOrders() {
   try {
     if (!fs.existsSync(ORDERS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(ORDERS_FILE, "utf-8"));
+    const orders = JSON.parse(fs.readFileSync(ORDERS_FILE, "utf-8"));
+    let changed = false;
+
+    // Migrasi hanya pesanan yang belum dibayar. Riwayat pesanan selesai tetap
+    // dipertahankan, sedangkan pesanan aktif langsung dikoreksi tanpa ongkir.
+    for (const order of orders) {
+      if (order.status !== "Menunggu Pembayaran" || order.konfirmasi === true) continue;
+      const subtotal = hitungTotalOrder(order.hargaSatuan, order.jumlah) || Number(order.subtotal || 0);
+      if (order.subtotal !== subtotal || order.total !== subtotal || "ongkir" in order) {
+        order.subtotal = subtotal;
+        order.total = subtotal;
+        delete order.ongkir;
+        changed = true;
+      }
+    }
+
+    if (changed) simpanOrders(orders);
+    return orders;
   } catch { return []; }
 }
 function simpanOrders(data) {
@@ -31,6 +48,12 @@ function simpanOrders(data) {
 }
 function formatRp(n) {
   return "Rp " + parseInt(n || 0).toLocaleString("id-ID");
+}
+export function hitungTotalOrder(hargaSatuan, jumlah = 1) {
+  const harga = Number(hargaSatuan);
+  const qty = Number(jumlah);
+  if (!Number.isFinite(harga) || !Number.isFinite(qty) || harga < 0 || qty < 1) return 0;
+  return Math.round(harga * qty);
 }
 function generateNoOrder() {
   const now = new Date();
@@ -160,16 +183,15 @@ export function prosesOrder(senderNum, teks) {
   }
 
   const noOrder  = generateNoOrder();
-  const subtotal = produk.harga * jumlah;
-  const ongkir   = subtotal >= 200000 ? 0 : 15000;
-  const total    = subtotal + ongkir;
+  const subtotal = hitungTotalOrder(produk.harga, jumlah);
+  const total    = subtotal;
   const waktu    = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
 
   const orderBaru = {
     noOrder, senderNum,
     produkKode: produk.kode, produkNama: produk.nama,
     jumlah, hargaSatuan: produk.harga,
-    subtotal, ongkir, total,
+    subtotal, total,
     status: "Menunggu Pembayaran",
     konfirmasi: false,
     waktu,
@@ -186,8 +208,6 @@ export function prosesOrder(senderNum, teks) {
     produkList[idx].stok -= jumlah;
     fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(produkList, null, 2));
   }
-
-  const ongkirTeks = ongkir === 0 ? "Gratis ✅" : formatRp(ongkir);
 
   return {
     ok: true,
@@ -206,8 +226,7 @@ export function prosesOrder(senderNum, teks) {
 🔢 Jumlah    : ${jumlah} pcs
 💰 Harga/pcs : ${formatRp(produk.harga)}
 ──────────────────────────
-💵 Subtotal  : ${formatRp(subtotal)}
-🚚 Ongkir    : ${ongkirTeks}
+💵 Harga Barang: ${formatRp(subtotal)}
 💳 *TOTAL    : ${formatRp(total)}*
 
 📊 Status: _Menunggu Pembayaran_

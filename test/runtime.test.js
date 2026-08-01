@@ -19,7 +19,7 @@ import {
   isPermintaanPromptUGC,
   isPermintaanQRIS,
 } from "../src/handler.js";
-import { kirimQRIS } from "../src/order.js";
+import { hitungTotalOrder, kirimQRIS } from "../src/order.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -43,6 +43,12 @@ test("QRIS lengkap terkirim melalui socket tiruan", async () => {
   assert.equal(sent[0].to, "123@lid");
   assert.ok(Buffer.isBuffer(sent[0].content.image));
   assert.ok(sent[0].content.image.length > 100000);
+});
+
+test("total pesanan sama dengan harga barang tanpa ongkir", () => {
+  assert.equal(hitungTotalOrder(7000, 1), 7000);
+  assert.equal(hitungTotalOrder(15000, 3), 45000);
+  assert.equal(hitungTotalOrder(50000, 1), 50000);
 });
 
 test("pengaturan panel dinormalisasi dengan aman", () => {
