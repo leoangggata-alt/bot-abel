@@ -4,16 +4,25 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { chatAI, isCreatorQuestion, normalizeVisionInput } from "../src/ai.js";
+import {
+  buildCatalogContext,
+  chatAI,
+  detectAIMode,
+  isCreatorQuestion,
+  normalizeVisionInput,
+} from "../src/ai.js";
 import { normalizeAISettings } from "../src/ai-settings.js";
 import { buildRealisticImagePrompt } from "../src/image.js";
 import {
   ambilPesanGambar,
+  ambilPromptGambar,
   ambilTeksPesan,
   ambilTeksKutipan,
   buildAffiliatePromptRequest,
   buildUGCPromptRequest,
   gabungkanKonteksKutipan,
+  handleMessage,
+  isPerintahGrupBerprefix,
   isPermintaanMemberGrup,
   isPermintaanPromptAffiliate,
   isPermintaanPromptUGC,
@@ -67,10 +76,64 @@ test("pengaturan panel dinormalisasi dengan aman", () => {
   assert.equal(settings.temperature, 0);
 });
 
-test("perintah member grup dikenali tanpa membalas obrolan biasa", () => {
+test("bahasa perintah natural tetap dikenali untuk konteks AI", () => {
   assert.equal(isPermintaanMemberGrup("tolong jelaskan cara kerjanya"), true);
   assert.equal(isPermintaanMemberGrup("berapa hasil 12 x 8?"), true);
+  assert.equal(isPermintaanMemberGrup("bercanda dong biar grup ramai"), true);
+  assert.equal(isPermintaanMemberGrup("rekomendasikan produk yang murah"), true);
+  assert.equal(isPermintaanMemberGrup("aku mau tanya cara order"), true);
+  assert.equal(isPermintaanMemberGrup("menurut kamu produk mana yang bagus"), true);
   assert.equal(isPermintaanMemberGrup("lagi ngopi nih teman-teman"), false);
+});
+
+test("pesan grup hanya diproses bila memakai prefix", () => {
+  assert.equal(isPerintahGrupBerprefix("!ai jelaskan produk"), true);
+  assert.equal(isPerintahGrupBerprefix("  !gambar poster promo  "), true);
+  assert.equal(isPerintahGrupBerprefix("!analisis"), true);
+  assert.equal(isPerintahGrupBerprefix("!"), false);
+  assert.equal(isPerintahGrupBerprefix("Abel jelaskan produk"), false);
+  assert.equal(isPerintahGrupBerprefix("berapa harga produk?"), false);
+  assert.equal(isPerintahGrupBerprefix(""), false);
+});
+
+test("handler grup diam tanpa prefix dan merespons command bertanda seru", async () => {
+  const sent = [];
+  const sock = {
+    user: { id: "628216035841:1@s.whatsapp.net" },
+    readMessages: async () => {},
+    sendPresenceUpdate: async () => {},
+    sendMessage: async (to, content) => sent.push({ to, content }),
+  };
+  const baseKey = {
+    remoteJid: "120363000000000000@g.us",
+    participant: "628111111111@s.whatsapp.net",
+    fromMe: false,
+  };
+
+  await handleMessage(sock, { key: baseKey, message: { conversation: "berapa harga produk?" } });
+  await handleMessage(sock, { key: baseKey, message: { imageMessage: { mimetype: "image/jpeg" } } });
+  assert.equal(sent.length, 0);
+
+  await handleMessage(sock, { key: baseKey, message: { conversation: "!menu" } });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].content.text, /!menu - Tampilkan menu ini/i);
+});
+
+test("mode AI otomatis mengenali vision, jualan, humor, kreatif, dan fakta", () => {
+  assert.equal(detectAIMode("apa isi gambar ini", true), "vision");
+  assert.equal(detectAIMode("rekomendasikan produk yang ready"), "sales");
+  assert.equal(detectAIMode("buat lelucon lucu"), "humor");
+  assert.equal(detectAIMode("tulis cerita pendek"), "creative");
+  assert.equal(detectAIMode("jelaskan mengapa langit biru"), "factual");
+});
+
+test("AI menerima katalog aktual dan perintah visual natural", () => {
+  const catalog = buildCatalogContext();
+  assert.match(catalog, /P001 \| gemini pro 18bulan \| Rp 50\.000/);
+  assert.match(catalog, /HABIS/);
+  assert.equal(ambilPromptGambar("buatkan gambar kucing di taman"), "kucing di taman");
+  assert.equal(ambilPromptGambar("buatkan poster promo minuman"), "poster promo minuman");
+  assert.equal(ambilPromptGambar("buat prompt poster promo"), "");
 });
 
 test("prompt konten affiliate dikenali dan disusun lengkap", () => {

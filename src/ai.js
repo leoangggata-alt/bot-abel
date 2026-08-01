@@ -1,18 +1,76 @@
 // Otak AI Abel: urutan provider, model, dan memori diatur dari panel admin.
 import https from "https";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { getApiKeyCandidates } from "./api-key-store.js";
 import { getAISettings } from "./ai-settings.js";
 dotenv.config();
 
 const history = {};
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
+
+function formatRp(value) {
+  return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
+}
+
+export function buildCatalogContext() {
+  try {
+    const products = JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf8"))
+      .filter(product => product.aktif !== false)
+      .slice(0, 60);
+    if (!products.length) return "Katalog aktif sedang kosong.";
+
+    const codeCounts = products.reduce((counts, product) => {
+      const code = String(product.kode || "-").toUpperCase();
+      counts[code] = (counts[code] || 0) + 1;
+      return counts;
+    }, {});
+
+    return products.map(product => {
+      const code = String(product.kode || "-").toUpperCase();
+      const stock = Number(product.stok ?? 999);
+      const status = stock <= 0 ? "HABIS" : `stok ${stock}`;
+      const duplicate = codeCounts[code] > 1 ? "; PERINGATAN kode duplikat" : "";
+      const description = String(product.deskripsi || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 220);
+      return `- ${code} | ${product.nama} | ${formatRp(product.harga)} | ${status}${duplicate}${description ? ` | ${description}` : ""}`;
+    }).join("\n");
+  } catch (error) {
+    console.warn(`[AI] Katalog tidak dapat dibaca: ${error.message}`);
+    return "Katalog aktual sedang tidak dapat dibaca; minta pengguna memakai !harga atau !produk.";
+  }
+}
+
+export function detectAIMode(text = "", hasImage = false) {
+  if (hasImage) return "vision";
+  const value = String(text).toLowerCase();
+  if (/\b(?:harga|produk|stok|jual|jualan|promosi|promosikan|tawarkan|rekomendasi produk|affiliate|afiliasi|closing|customer)\b/.test(value)) return "sales";
+  if (/\b(?:bercanda|lawak|lelucon|joke|roast|tebak-tebakan|lucu|humor)\b/.test(value)) return "humor";
+  if (/\b(?:buat|buatkan|bikin|tulis|rancang|susun|cerita|puisi|caption|skrip|naskah|ide|kreatif|ugc|prompt)\b/.test(value)) return "creative";
+  if (/\b(?:hitung|berapa|fakta|jelaskan|analisis|bandingkan|kenapa|mengapa|bagaimana|apa|siapa|kapan|dimana)\b|\?/.test(value)) return "factual";
+  return "general";
+}
+
+function effectiveTemperature(settings, mode) {
+  const configured = Number(settings.temperature);
+  const base = Number.isFinite(configured) ? configured : 0.8;
+  if (mode === "vision" || mode === "factual") return Math.min(base, 0.4);
+  if (mode === "sales") return Math.min(base, 0.65);
+  return base;
+}
 
 function buildSystemPrompt(settings) {
   const custom = settings.customInstruction
     ? `\n\n## INSTRUKSI TAMBAHAN ADMIN\n${settings.customInstruction}`
     : "";
-  return `Kamu adalah Abel, asisten AI cerdas yang berjalan di WhatsApp.
+  const catalog = buildCatalogContext();
+  return `Kamu adalah Abel, asisten AI serbaguna yang cerdas dan berjalan di WhatsApp.
 
 ## IDENTITAS
 - Nama: Abel
@@ -24,17 +82,29 @@ function buildSystemPrompt(settings) {
 - Owner: ${process.env.OWNER_NAME || "Admin"}
 
 ## PERILAKU
+- Pahami bahasa Indonesia formal, santai, singkatan, dan salah ketik. Tangkap maksud pengguna dari seluruh konteks, bukan hanya satu kata.
+- Sebelum menjawab, tentukan secara diam-diam tujuan, data, batasan, dan format hasil. Jangan tampilkan proses berpikir internal; tampilkan hanya jawaban dan langkah penting.
+- Jika tugas dapat diselesaikan di chat, langsung kerjakan sampai jadi. Jangan hanya menjelaskan cara mengerjakannya dan jangan sekadar mengulang permintaan.
 - Utamakan ketepatan. Jangan mengarang fakta, angka, teks, nama, atau detail yang tidak terlihat/diketahui.
 - Bedakan pengamatan dengan dugaan. Jika kurang yakin, katakan bagian yang tidak pasti dan minta klarifikasi.
+- Untuk fakta yang dapat berubah seperti berita, harga di luar katalog, jadwal, hukum, atau tokoh terkini, jangan berpura-pura memiliki data real-time. Nyatakan bila perlu diverifikasi.
 - Baca pesan pengguna, caption, dan konteks pesan yang dibalas sebagai satu kesatuan.
-- Saat menganalisis gambar, periksa objek, teks, jumlah, warna, posisi, dan konteks secara teliti. Jangan mengaku membaca teks yang buram.
-- Jawab ringkas tetapi lengkap; gunakan poin bila membantu.
+- Saat menganalisis gambar, susun bila relevan: (1) yang terlihat, (2) teks/OCR persis, (3) analisis atau dugaan yang diberi label, (4) kesimpulan/tindakan. Periksa objek, teks, jumlah, warna, posisi, dan konteks. Jangan mengaku membaca bagian yang buram.
+- Ikuti tingkat detail yang diminta. Untuk permintaan "detail/lengkap", berikan hasil terstruktur, contoh, langkah, dan bagian siap salin. Untuk pertanyaan sederhana, tetap ringkas.
 - Ingat konteks percakapan yang diberikan.
-- Anggota grup boleh memberi pertanyaan dan perintah. Ikuti perintah yang aman dan masih dalam kemampuan bot.
+- Di grup, anggota memberi pertanyaan dan perintah melalui pesan berprefix !. Ikuti perintah yang aman dan masih dalam kemampuan bot.
 - Untuk konten affiliate/jualan/UGC, buat keluaran yang siap pakai: hook, skrip, dialog persis, shot list, caption, CTA, hashtag, prompt visual Nano Banana, prompt video Google Flow/Veo per klip, audio, dan negative prompt. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
+- Saat berjualan, gunakan hanya katalog aktual di bawah. Sebut harga, stok, manfaat dari deskripsi, rekomendasi yang sesuai kebutuhan, CTA yang natural, dan format order !order KODE JUMLAH. Produk HABIS tidak boleh ditawarkan sebagai ready stock. Jika kode duplikat, jangan menebak; minta pengguna memilih nama produk dan arahkan admin memperbaiki kode.
+- Boleh bercanda, membuat lelucon, tebak-tebakan, atau balasan santai. Tetap ramah, tidak merendahkan identitas seseorang, tidak mempermalukan, dan kembali serius saat pengguna membutuhkan bantuan.
+- Untuk hitungan, cek angka dan satuan. Tampilkan rumus singkat bila itu membantu pengguna memeriksa hasil.
 - Jika diminta membuat gambar, jangan hanya memberi prompt; sistem bot akan menangani generator gambar sebelum chat ini.
 - Tolak secara sopan permintaan berbahaya atau ilegal.
-- Jika tidak yakin, jelaskan batas kepastian dengan singkat.${custom}`;
+- Jika informasi penting belum ada, ajukan paling banyak satu pertanyaan klarifikasi. Jika masih bisa dikerjakan dengan asumsi aman, tulis asumsi lalu lanjutkan.
+
+## KATALOG TOKO AKTUAL
+${catalog}
+
+Gunakan katalog ini sebagai satu-satunya sumber harga dan stok toko.${custom}`;
 }
 
 export function isCreatorQuestion(text = "") {
@@ -287,8 +357,14 @@ export async function chatAI(userId, pesan, options = {}) {
   try {
     const settings = getAISettings();
     const image = normalizeVisionInput(options.image || null);
+    const mode = detectAIMode(pesan, Boolean(image));
+    const runtimeSettings = {
+      ...settings,
+      temperature: effectiveTemperature(settings, mode),
+    };
     const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(pesan);
-    const requestedMax = Number(options.maxOutputTokens || (isLongFormMarketing ? 5000 : 1200));
+    const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(pesan);
+    const requestedMax = Number(options.maxOutputTokens || (isLongFormMarketing ? 5000 : wantsDetailedAnswer ? 3200 : 1800));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     if (!history[userId]) history[userId] = [];
     const userHistory = history[userId];
@@ -299,10 +375,10 @@ export async function chatAI(userId, pesan, options = {}) {
     let balasan = "";
     let lastError;
 
-    const providerOrder = image ? settings.visionOrder : settings.textOrder;
+    const providerOrder = image ? runtimeSettings.visionOrder : runtimeSettings.textOrder;
     for (const provider of providerOrder) {
       try {
-        balasan = await callProvider(provider, messages, userId, settings, image, maxOutputTokens);
+        balasan = await callProvider(provider, messages, userId, runtimeSettings, image, maxOutputTokens);
         if (balasan) break;
       } catch (error) {
         lastError = error;
@@ -311,13 +387,13 @@ export async function chatAI(userId, pesan, options = {}) {
     }
     if (!balasan) throw lastError || new Error("Semua provider teks gagal");
 
-    if (settings.memoryTurns > 0) {
+    if (runtimeSettings.memoryTurns > 0) {
       userHistory.push({
         role: "user",
         content: image ? `[Pengguna mengirim gambar] ${pesan}` : pesan,
       });
       userHistory.push({ role: "assistant", content: balasan });
-      const maxMessages = settings.memoryTurns * 2;
+      const maxMessages = runtimeSettings.memoryTurns * 2;
       if (userHistory.length > maxMessages) history[userId] = userHistory.slice(-maxMessages);
     } else {
       history[userId] = [];

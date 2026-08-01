@@ -20,7 +20,7 @@ export const DEFAULT_AI_SETTINGS = Object.freeze({
   textOrder: ["openai", "gemini", "groq", "xai"],
   visionOrder: ["openai", "gemini", "groq", "xai"],
   imageOrder: ["gemini", "openai", "xai", "seadream", "leonardo", "pollinations"],
-  memoryTurns: 10,
+  memoryTurns: 16,
   temperature: 0.8,
   customInstruction: "",
   textModels: {

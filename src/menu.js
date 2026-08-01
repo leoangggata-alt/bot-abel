@@ -59,6 +59,7 @@ Berikut daftar perintah yang tersedia:
 ├ ${PREFIX}cs - Hubungi customer service
 ├ ${PREFIX}faq - Pertanyaan umum
 ├ ${PREFIX}ai [pesan] - Tanya AI kami
+├ ${PREFIX}analisis - Analisis gambar/OCR dari foto
 ├ ${PREFIX}gambar [deskripsi] - Buat gambar Nano Banana Pro
 ├ ${PREFIX}ugc [produk] - Prompt UGC + dialog + Flow/Veo
 ├ ${PREFIX}affiliate [produk] - Prompt konten jualan lengkap

@@ -32,22 +32,26 @@ const OWNER = process.env.OWNER_NUMBER;
 const AUTO_READ = process.env.AUTO_READ !== "false";
 const AUTO_TYPING = process.env.AUTO_TYPING !== "false";
 const ANTI_SPAM = process.env.ANTI_SPAM !== "false";
-const AI_IN_GROUP = process.env.AI_IN_GROUP !== "false";
-const GROUP_MEMBER_COMMANDS = process.env.GROUP_MEMBER_COMMANDS !== "false";
 
 // Ambil deskripsi dari bahasa natural tanpa salah menangkap permintaan "prompt gambar".
 export function ambilPromptGambar(teks = "") {
   const nilai = teks.trim();
-  if (!nilai || /\bprompt\b/i.test(nilai)) return "";
+  if (!nilai || /\b(?:prompt|promt)\b/i.test(nilai)) return "";
 
   const pola = [
-    /^(?:tolong\s+)?(?:buat(?:kan)?|bikin(?:kan)?|ciptakan|generate)\s+(?:saya\s+)?(?:sebuah\s+)?(?:gambar|image|foto)(?:\s+(?:tentang|berupa|dengan tema))?\s+(.+)$/i,
-    /^(?:tolong\s+)?(?:gambar(?:kan)?|image|foto)\s+(.+)$/i,
+    /^(?:tolong\s+)?(?:buat(?:kan)?|bikin(?:kan)?|ciptakan|generate|desain(?:kan)?)\s+(?:saya\s+)?(?:sebuah\s+)?(gambar|image|foto|poster|banner|flyer|thumbnail|logo|ilustrasi|desain visual)(?:\s+(?:tentang|berupa|dengan tema|untuk))?\s+(.+)$/i,
+    /^(?:tolong\s+)?(gambar(?:kan)?|image|foto|poster|banner|flyer|thumbnail|logo|ilustrasi)\s+(.+)$/i,
   ];
 
   for (const regex of pola) {
     const cocok = nilai.match(regex);
-    if (cocok?.[1]?.trim()) return cocok[1].trim();
+    if (cocok?.[2]?.trim()) {
+      const jenis = cocok[1].toLowerCase();
+      const deskripsi = cocok[2].trim();
+      return /^(?:gambar(?:kan)?|image|foto)$/.test(jenis)
+        ? deskripsi
+        : `${jenis} ${deskripsi}`;
+    }
   }
   return "";
 }
@@ -164,7 +168,13 @@ export function isPermintaanMemberGrup(text = "") {
   const value = String(text).toLowerCase().trim();
   if (!value) return false;
   if (value.includes("?")) return true;
-  return /^(tolong|bantu|jawab|jelaskan|terangkan|analisis|analisa|cek|periksa|cari|carikan|buat|buatkan|bikin|bikinkan|hitung|terjemahkan|translate|ringkas|rangkum|ubah|tulis|bacakan|lihat|ugc|affiliate|afiliasi|apa|siapa|kenapa|mengapa|bagaimana|gimana|berapa|kapan|dimana|apakah|bisakah)\b/.test(value);
+  if (/\b(?:mau tanya|ingin tahu|pengen tahu|pingin tahu|bisa bantu|minta tolong|coba buat|coba jelaskan|kasih tahu|menurutmu|menurut kamu|aku butuh|saya butuh)\b/.test(value)) return true;
+  return /^(tolong|bantu|jawab|jelaskan|terangkan|analisis|analisa|cek|periksa|cari|carikan|buat|buatkan|buatlah|bikin|bikinkan|kerjakan|selesaikan|hitung|terjemahkan|translate|ringkas|rangkum|ubah|tulis|susun|rancang|bacakan|lihat|jual|jualan|promosi|promosikan|tawarkan|rekomendasikan|bandingkan|bercanda|lawak|lelucon|joke|roast|tebak|ceritakan|kasih|ugc|affiliate|afiliasi|apa|siapa|kenapa|mengapa|bagaimana|gimana|berapa|kapan|dimana|apakah|bisakah)\b/.test(value);
+}
+
+export function isPerintahGrupBerprefix(text = "", prefix = PREFIX) {
+  const value = String(text || "").trim();
+  return Boolean(prefix) && value.startsWith(prefix) && value.length > prefix.length;
 }
 
 export async function downloadGambarWhatsApp(imageMessage) {
@@ -225,6 +235,16 @@ export async function handleMessage(sock, msg) {
 
     console.log(`[MSG] ${isGrup ? "Grup" : "Personal"} | ${senderNum} | "${(teks || "[gambar]").slice(0, 60)}"`);
 
+    const trimTeks = teks.trim();
+    const lowerTeks = trimTeks.toLowerCase();
+
+    // Di grup, bot diam kecuali pesan diawali prefix (!). Foto juga harus
+    // memakai caption !analisis atau dibalas dengan perintah !analisis.
+    if (isGrup && !isPerintahGrupBerprefix(trimTeks)) {
+      console.log(`[SKIP] Grup tanpa prefix ${PREFIX} dari ${senderNum}`);
+      return;
+    }
+
     // Fitur tambahan tidak boleh menggagalkan command utama saat koneksi goyah.
     if (AUTO_READ) {
       sock.readMessages([key]).catch((err) => {
@@ -246,9 +266,6 @@ export async function handleMessage(sock, msg) {
         console.warn(`[AUTO_TYPING] dilewati: ${err?.message || err}`);
       });
     }
-
-    const trimTeks = teks.trim();
-    const lowerTeks = trimTeks.toLowerCase();
 
     // Gambar langsung selalu dianalisis. Gambar kutipan dianalisis saat anggota
     // bertanya/menyuruh melihat gambar tersebut.
@@ -334,63 +351,6 @@ export async function handleMessage(sock, msg) {
       return;
     }
 
-    // ── GRUP: hanya aktif jika dipanggil ─────────────────────
-    // Cara aktifkan bot di grup:
-    //   1. Pakai prefix !  → contoh: !ai siapa kamu
-    //   2. Sebut "abel"    → contoh: abel siapa presiden?
-    //   3. Tag/mention bot → contoh: @628xxx halo
-    if (isGrup && AI_IN_GROUP) {
-      const botNum = sock.user?.id?.split(":")[0];
-      const diMention =
-        teks.includes(`@${botNum}`) ||      // di-tag langsung
-        lowerTeks.startsWith("abel ") ||    // mulai dengan "abel"
-        lowerTeks === "abel";               // hanya kata "abel"
-
-      const perintahMember = GROUP_MEMBER_COMMANDS && isPermintaanMemberGrup(trimTeks);
-
-      if (diMention || perintahMember) {
-        const pesanBersih = teks
-          .replace(/@\d+/g, "")
-          .replace(/^abel\s*/i, "")
-          .trim();
-
-        const promptGambar = ambilPromptGambar(pesanBersih);
-        if (promptGambar) {
-          await kirimGambar(
-            sock,
-            from,
-            promptGambar,
-            `@${senderNum} 🎨 Ini gambarnya!`
-          );
-          return;
-        }
-
-        if (isPermintaanPromptUGC(pesanBersih)) {
-          const balasan = await chatAI(
-            senderId,
-            gabungkanKonteksKutipan(buildUGCPromptRequest(pesanBersih), quotedText)
-          );
-          await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
-          return;
-        }
-
-        if (isPermintaanPromptAffiliate(pesanBersih)) {
-          const balasan = await chatAI(
-            senderId,
-            gabungkanKonteksKutipan(buildAffiliatePromptRequest(pesanBersih), quotedText)
-          );
-          await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
-          return;
-        }
-
-        const balasan = await chatAI(
-          senderId,
-          gabungkanKonteksKutipan(pesanBersih || trimTeks || "halo", quotedText)
-        );
-        await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
-        return;
-      }
-    }
   } catch (err) {
     console.error("[Handler Error]", err?.stack || err);
   }
@@ -583,7 +543,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     case "tanya":
     case "chat":
       if (!sisa) {
-        await kirim(sock, from, `🤖 Langsung ketik pertanyaan atau kebutuhanmu!\n\nContoh tanpa prefix:\n_buatkan prompt gambar sunset_\n_jelaskan apa itu AI_\n_buat caption instagram_\n\nAtau pakai: *${PREFIX}ai [pertanyaan]*`);
+        await kirim(sock, from, `🤖 Di chat pribadi kamu bisa langsung mengetik pertanyaan. Di grup wajib diawali *${PREFIX}*.\n\nContoh di grup:\n_${PREFIX}ai jelaskan sesuatu dengan detail_\n_${PREFIX}ai rekomendasikan produk yang ready_\n_${PREFIX}ai bercanda dong_\n_${PREFIX}gambar poster jualan_\n\nGambar/OCR: kirim atau reply foto dengan *${PREFIX}analisis*\nUGC lengkap: *${PREFIX}ugc [produk]*`);
       } else {
         const promptGambar = ambilPromptGambar(sisa);
         if (promptGambar) {
