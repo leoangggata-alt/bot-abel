@@ -3,7 +3,7 @@ set -euo pipefail
 
 BOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$BOT_DIR"
-mkdir -p logs data session
+mkdir -p logs data session session-arka
 
 if [ ! -f ".env" ]; then
   echo "File .env belum ada. Jalankan: bash setup-termux.sh"
@@ -32,6 +32,8 @@ ENABLE_TUNNEL_VALUE="$(env_value ENABLE_TUNNEL)"
 ADMIN_PASSWORD_VALUE="$(env_value ADMIN_PASSWORD)"
 ADMIN_PORT_VALUE="$(env_value ADMIN_PORT)"
 ADMIN_PORT_VALUE="${ADMIN_PORT_VALUE:-8080}"
+BOT_HOST_ROLE_VALUE="$(env_value BOT_HOST_ROLE)"
+BOT_HOST_ROLE_VALUE="${BOT_HOST_ROLE_VALUE:-primary}"
 
 if [ "${ENABLE_TUNNEL_VALUE,,}" = "true" ]; then
   if [ -z "$ADMIN_PASSWORD_VALUE" ]; then
@@ -49,6 +51,7 @@ else
 fi
 
 echo "Menjalankan layanan Bot Abel dengan PM2..."
+echo "Mode awal host: ${BOT_HOST_ROLE_VALUE^^}"
 pm2 startOrReload ecosystem.config.cjs --update-env
 pm2 save --force >/dev/null
 
@@ -77,7 +80,8 @@ if [ "${ENABLE_TUNNEL_VALUE,,}" = "true" ]; then
   fi
 else
   echo "Admin  : http://127.0.0.1:${ADMIN_PORT_VALUE}"
-  echo "Tunnel : nonaktif (lebih aman; ubah ENABLE_TUNNEL=true bila diperlukan)"
+  echo "PC Wi-Fi: lihat alamat LAN pada Dashboard panel"
+  echo "Tunnel : nonaktif (ubah ENABLE_TUNNEL=true bila perlu akses dari luar Wi-Fi)"
 fi
 
 if [ "${1:-}" = "--logs" ]; then

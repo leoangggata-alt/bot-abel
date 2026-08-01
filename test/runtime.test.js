@@ -19,6 +19,7 @@ import {
 } from "../src/broadcast.js";
 import { normalizeBroadcastRequest } from "../src/broadcast-store.js";
 import { DEFAULT_BOT_PROFILES, normalizePhoneNumber } from "../src/bot-profile-store.js";
+import { normalizeHostRole } from "../src/host-mode-store.js";
 import { buildRealisticImagePrompt } from "../src/image.js";
 import {
   ambilPesanGambar,
@@ -82,6 +83,12 @@ test("pengaturan panel dinormalisasi dengan aman", () => {
   assert.equal(settings.imageModels.gemini, "gemini-3-pro-image");
   assert.equal(settings.memoryTurns, 50);
   assert.equal(settings.temperature, 0);
+});
+
+test("mode host hanya menerima primary atau standby", () => {
+  assert.equal(normalizeHostRole("PRIMARY"), "primary");
+  assert.equal(normalizeHostRole("standby"), "standby");
+  assert.equal(normalizeHostRole("tidak-valid", "standby"), "standby");
 });
 
 test("bahasa perintah natural tetap dikenali untuk konteks AI", () => {

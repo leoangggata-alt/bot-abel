@@ -26,6 +26,7 @@ import {
   getBotProfiles,
   updateBotStatus,
 } from "./src/bot-profile-store.js";
+import { getHostMode } from "./src/host-mode-store.js";
 
 dotenv.config();
 
@@ -40,6 +41,13 @@ let broadcastPollTimer = null;
 let groupSyncTimer = null;
 let broadcastWorkerBusy = false;
 let botControlTimer = null;
+let hostRoleTimer = null;
+let appliedHostRole = null;
+let hostRoleBusy = false;
+
+function isHostPrimary() {
+  return getHostMode().role === "primary";
+}
 
 function createRuntime(profileId) {
   const runtime = {
@@ -111,7 +119,7 @@ function startBroadcastServices(sock) {
 }
 
 function scheduleReconnect(runtime) {
-  if (shuttingDown || runtime.reconnectTimer) return;
+  if (shuttingDown || runtime.reconnectTimer || !isHostPrimary()) return;
   const profile = getBotProfile(runtime.profileId);
   if (!profile?.enabled) return;
   const delayMs = Math.min(30000, 2000 * 2 ** runtime.reconnectAttempt);
@@ -151,6 +159,16 @@ async function restartBot(profileId) {
   }
 
   const profile = getBotProfile(profileId);
+  if (!isHostPrimary()) {
+    updateBotStatus(profileId, {
+      state: "standby",
+      connected: false,
+      pairingCode: "",
+      qrAvailable: false,
+      message: `${profile?.name || profileId} standby di host ini`,
+    });
+    return;
+  }
   if (!profile?.enabled) {
     updateBotStatus(profileId, {
       state: "disabled",
@@ -215,7 +233,7 @@ async function requestPairingCode(sock, runtime, profile, registered, generation
 async function connectBot(profileId) {
   const profile = getBotProfile(profileId);
   const runtime = getRuntime(profileId);
-  if (!profile?.enabled || shuttingDown || runtime.connecting) return null;
+  if (!profile?.enabled || shuttingDown || runtime.connecting || !isHostPrimary()) return null;
 
   runtime.connecting = true;
   runtime.generation += 1;
@@ -286,7 +304,7 @@ async function connectBot(profileId) {
         const statusCode = lastDisconnect?.error instanceof Boom
           ? lastDisconnect.error.output.statusCode
           : "unknown";
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut && isHostPrimary();
         runtime.socket = null;
         if (profileId === "abel") {
           stopBroadcastServices();
@@ -377,8 +395,9 @@ async function connectBot(profileId) {
   }
 }
 
-async function startAllBots() {
+async function activateHost() {
   const profiles = getBotProfiles();
+  console.log(`[HOST] PRIMARY aktif di ${getHostMode().hostName}`);
   for (const profile of Object.values(profiles)) {
     if (!profile.enabled) {
       updateBotStatus(profile.id, {
@@ -393,7 +412,67 @@ async function startAllBots() {
       scheduleReconnect(getRuntime(profile.id));
     });
   }
+}
+
+function deactivateHost() {
+  const profiles = getBotProfiles();
+  console.log(`[HOST] STANDBY aktif di ${getHostMode().hostName}; socket WhatsApp dihentikan`);
+  stopBroadcastServices();
+  markGroupDirectoryDisconnected();
+  for (const [profileId, runtime] of runtimes.entries()) {
+    runtime.generation += 1;
+    runtime.connecting = false;
+    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+    runtime.reconnectTimer = null;
+    const oldSocket = runtime.socket;
+    runtime.socket = null;
+    try {
+      oldSocket?.end(new Error("Host dialihkan ke standby"));
+    } catch {
+      // Socket mungkin sudah tertutup.
+    }
+    const profile = profiles[profileId];
+    updateBotStatus(profileId, {
+      state: "standby",
+      connected: false,
+      pairingCode: "",
+      qrAvailable: false,
+      message: `${profile?.name || profileId} standby di host ini`,
+    });
+  }
+  for (const profile of Object.values(profiles)) {
+    if (runtimes.has(profile.id)) continue;
+    updateBotStatus(profile.id, {
+      state: "standby",
+      connected: false,
+      pairingCode: "",
+      qrAvailable: false,
+      message: `${profile.name} standby di host ini`,
+    });
+  }
+}
+
+async function applyHostRole(force = false) {
+  if (hostRoleBusy || shuttingDown) return;
+  const role = getHostMode().role;
+  if (!force && role === appliedHostRole) return;
+  hostRoleBusy = true;
+  appliedHostRole = role;
+  try {
+    if (role === "primary") await activateHost();
+    else deactivateHost();
+  } finally {
+    hostRoleBusy = false;
+  }
+}
+
+async function startRuntimeServices() {
   startBotControlService();
+  await applyHostRole(true);
+  hostRoleTimer = setInterval(() => {
+    applyHostRole().catch(error => console.error(`[HOST] Gagal menerapkan mode: ${error.message}`));
+  }, 2000);
+  hostRoleTimer.unref?.();
 }
 
 async function shutdown(signal) {
@@ -402,6 +481,8 @@ async function shutdown(signal) {
   stopBroadcastServices();
   if (botControlTimer) clearInterval(botControlTimer);
   botControlTimer = null;
+  if (hostRoleTimer) clearInterval(hostRoleTimer);
+  hostRoleTimer = null;
   markGroupDirectoryDisconnected();
   for (const runtime of runtimes.values()) {
     if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
@@ -425,7 +506,7 @@ async function shutdown(signal) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-startAllBots().catch(error => {
+startRuntimeServices().catch(error => {
   console.error("Gagal memulai bot:", error.message);
   process.exitCode = 1;
 });

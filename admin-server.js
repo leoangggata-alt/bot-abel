@@ -7,6 +7,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import os from "os";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import {
@@ -30,6 +31,7 @@ import {
   requestBotRestart,
   updateBotProfile,
 } from "./src/bot-profile-store.js";
+import { getHostMode, setHostRole } from "./src/host-mode-store.js";
 
 dotenv.config();
 
@@ -44,6 +46,11 @@ const ORDERS_FILE   = path.join(__dirname, "data", "orders.json");
 const SETTINGS_FILE = path.join(__dirname, "data", "settings.json");
 const TUNNEL_LOG    = path.join(__dirname, "logs", "tunnel.log");
 const TUNNEL_URL_FILE = path.join(__dirname, "logs", "admin-url.txt");
+
+const isLoopbackHost = ["127.0.0.1", "localhost", "::1"].includes(HOST.toLowerCase());
+if (!isLoopbackHost && !ADMIN_PASSWORD) {
+  throw new Error("ADMIN_PASSWORD wajib diisi ketika panel dibuka ke jaringan lokal/internet");
+}
 
 app.disable("x-powered-by");
 
@@ -109,10 +116,42 @@ function getTunnelUrl() {
   return null;
 }
 
+function getLanUrls() {
+  const urls = [];
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if ((address.family !== "IPv4" && address.family !== 4) || address.internal) continue;
+      urls.push(`http://${address.address}:${PORT}`);
+    }
+  }
+  return [...new Set(urls)];
+}
+
 // API: get tunnel URL
 app.get("/api/tunnel-url", (req, res) => {
   const url = getTunnelUrl();
-  res.json({ url, localUrl: `http://localhost:${PORT}` });
+  const localUrl = `http://127.0.0.1:${PORT}`;
+  const lanUrls = HOST === "0.0.0.0" || HOST === "::" ? getLanUrls() : [];
+  res.json({ url, localUrl, lanUrls, preferredUrl: url || lanUrls[0] || localUrl });
+});
+
+app.get("/api/host-mode", (req, res) => {
+  const mode = getHostMode();
+  res.json({
+    ...mode,
+    localUrl: `http://127.0.0.1:${PORT}`,
+    lanUrls: HOST === "0.0.0.0" || HOST === "::" ? getLanUrls() : [],
+    tunnelUrl: getTunnelUrl(),
+  });
+});
+
+app.put("/api/host-mode", (req, res) => {
+  try {
+    const mode = setHostRole(req.body?.role);
+    return res.json({ success: true, mode });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
 });
 
 

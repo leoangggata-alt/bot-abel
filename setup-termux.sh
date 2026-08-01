@@ -23,7 +23,7 @@ else
 fi
 
 cd "$BOT_DIR"
-mkdir -p data assets logs session
+mkdir -p data assets logs session session-arka
 
 echo "[2/6] Memasang dependency bot..."
 if [ -f package-lock.json ]; then
@@ -38,7 +38,7 @@ npm install -g pm2
 if [ ! -f ".env" ]; then
   echo
   echo "[4/6] Membuat konfigurasi bot..."
-  read -r -p "Nomor WhatsApp bot untuk pairing (628xxx): " PAIRING_NUMBER_VALUE
+  read -r -p "Nomor WhatsApp bot untuk pairing code opsional (628xxx): " PAIRING_NUMBER_VALUE
   read -r -p "Nomor owner (628xxx): " OWNER_NUMBER_VALUE
   read -r -p "Nama bisnis [Bot Abel]: " BUSINESS_NAME_VALUE
   read -r -p "GROQ API key (boleh dikosongkan): " GROQ_KEY_VALUE
@@ -63,12 +63,14 @@ OWNER_NAME=Admin
 OWNER_NUMBER=${OWNER_NUMBER_VALUE}
 PAIRING_NUMBER=${PAIRING_NUMBER_VALUE}
 BOT_PREFIX=!
+BOT_HOST_NAME=HP Termux
+BOT_HOST_ROLE=primary
 AUTO_READ=true
 AUTO_TYPING=true
 ANTI_SPAM=true
 WELCOME_MESSAGE=true
 AI_IN_GROUP=true
-ADMIN_HOST=127.0.0.1
+ADMIN_HOST=0.0.0.0
 ADMIN_PORT=8080
 ADMIN_USER=${ADMIN_USER_VALUE}
 ADMIN_PASSWORD=${ADMIN_PASSWORD_VALUE}
@@ -90,7 +92,9 @@ else
 
   ensure_env_key "PAIRING_NUMBER" ""
   ensure_env_key "BOT_PREFIX" "!"
-  ensure_env_key "ADMIN_HOST" "127.0.0.1"
+  ensure_env_key "BOT_HOST_NAME" "HP Termux"
+  ensure_env_key "BOT_HOST_ROLE" "primary"
+  ensure_env_key "ADMIN_HOST" "0.0.0.0"
   ensure_env_key "ADMIN_PORT" "8080"
   ensure_env_key "ADMIN_USER" "admin"
   ensure_env_key "ADMIN_PASSWORD" ""
@@ -118,6 +122,7 @@ echo
 echo "Setup selesai."
 echo "Jalankan bot: bash start-all.sh"
 echo "Lihat status: bash status-all.sh"
+echo "Panel di HP: http://127.0.0.1:8080"
 echo
 echo "Agar benar-benar 24/7:"
 echo "1. Install Termux:Boot dari F-Droid dan buka aplikasinya satu kali."

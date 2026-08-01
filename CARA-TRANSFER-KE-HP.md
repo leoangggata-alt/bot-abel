@@ -1,30 +1,25 @@
-# Cara Transfer Bot ke HP
+# Cara Memasang Bot di HP dari GitHub
 
-Paket siap transfer bernama `whatsapp-bot-baileys-termux.zip`.
-
-## Melalui kabel USB
-
-1. Sambungkan HP dan pilih mode **File Transfer**.
-2. Salin ZIP ke folder **Download** di penyimpanan internal HP.
-3. Buka Termux dan jalankan:
+Di Termux jalankan:
 
 ```bash
-termux-setup-storage
-pkg install unzip -y
+pkg update -y
+pkg install git -y
 cd ~
-unzip ~/storage/shared/Download/whatsapp-bot-baileys-termux.zip
+git clone https://github.com/leoangggata-alt/bot-abel.git whatsapp-bot-baileys
 cd whatsapp-bot-baileys
 bash setup-termux.sh
 bash start-all.sh
 ```
 
-## Melalui penyimpanan cloud
+Panel HP dapat dibuka di `http://127.0.0.1:8080`. Login menggunakan akun admin
+yang dibuat oleh setup. Dashboard juga menampilkan URL Wi-Fi agar panel Termux
+dapat dibuka dari PC pada jaringan yang sama.
 
-Unggah ZIP ke Google Drive atau layanan penyimpanan lain, unduh ke folder
-Download HP, lalu gunakan perintah Termux yang sama di atas.
+Sebelum menautkan akun WhatsApp pada Termux, jadikan panel PC **STANDBY**.
+Setelah itu jadikan Termux **PRIMARY** dan pindai QR pada halaman Duo Bot.
 
-Paket tidak menyertakan `.env`, `session`, `node_modules`, log, atau data order.
-Konfigurasi rahasia dibuat langsung di HP oleh `setup-termux.sh`, dan akun
-WhatsApp ditautkan menggunakan pairing code.
+File rahasia seperti `.env`, API key, sesi WhatsApp, order, dan pengaturan lokal
+tidak dikirim melalui GitHub. Isikan kembali melalui setup/panel HP.
 
-Panduan lengkap 24/7 ada di `TERMUX-GUIDE.md`.
+Panduan lengkap, auto-start, dan cara failover tersedia di `TERMUX-GUIDE.md`.

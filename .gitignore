@@ -17,6 +17,7 @@ data/broadcast-jobs/
 data/bot-profiles.json
 data/bot-status.json
 data/bot-control.json
+data/host-mode.json
 qrcode.png
 qrcode-arka.png
 bot-runtime.tar.gz

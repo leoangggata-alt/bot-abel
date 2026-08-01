@@ -126,6 +126,23 @@
     .stat-value { font-size: 28px; font-weight: 800; }
     .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
+    /* ── Primary / Standby Host ── */
+    .host-mode-card {
+      background: linear-gradient(135deg, rgba(124,58,237,.16), rgba(6,182,212,.08));
+      border: 1px solid rgba(124,58,237,.42); border-radius: var(--radius);
+      padding: 20px; margin-bottom: 20px;
+    }
+    .host-mode-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+    .host-mode-title { font-size:16px; font-weight:800; }
+    .host-mode-meta { color:var(--text-muted); font-size:12px; margin-top:5px; line-height:1.6; }
+    .host-role-badge { border-radius:999px; padding:7px 12px; font-size:11px; font-weight:800; letter-spacing:.7px; }
+    .host-role-badge.primary { color:#6ee7b7; background:rgba(16,185,129,.14); border:1px solid rgba(16,185,129,.4); }
+    .host-role-badge.standby { color:#fcd34d; background:rgba(245,158,11,.14); border:1px solid rgba(245,158,11,.4); }
+    .host-mode-grid { display:grid; grid-template-columns:1fr auto; align-items:end; gap:16px; margin-top:16px; }
+    .host-address { font-size:12px; color:var(--accent); overflow-wrap:anywhere; line-height:1.7; }
+    .host-warning { color:var(--warning); font-size:11px; margin-top:9px; line-height:1.6; }
+    .host-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+
     /* ── Product Table ── */
     .card {
       background: var(--surface); border: 1px solid var(--border);
@@ -387,7 +404,7 @@
     .bot-live-status { margin-left: auto; text-align: right; }
     .bot-state { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 8px; font-size: 9px; font-weight: 800; background: rgba(148,163,184,.12); color: var(--text-muted); }
     .bot-state.connected { color: #6ee7b7; background: rgba(16,185,129,.14); }
-    .bot-state.waiting_pairing, .bot-state.waiting_qr, .bot-state.connecting, .bot-state.reconnecting { color: #fcd34d; background: rgba(245,158,11,.14); }
+    .bot-state.standby, .bot-state.waiting_pairing, .bot-state.waiting_qr, .bot-state.connecting, .bot-state.reconnecting { color: #fcd34d; background: rgba(245,158,11,.14); }
     .bot-state.error, .bot-state.pairing_error, .bot-state.logged_out { color: #fca5a5; background: rgba(239,68,68,.14); }
     .bot-number { color: var(--text-muted); font-size: 9px; margin-top: 5px; }
     .bot-profile-body { padding: 18px 20px; }
@@ -408,6 +425,9 @@
       .mobile-nav { display: flex; }
       .url-banner { display: none !important; }
       .stats-grid { grid-template-columns: repeat(2,1fr); }
+      .host-mode-head, .host-mode-grid { display:grid; grid-template-columns:1fr; }
+      .host-actions { justify-content:stretch; }
+      .host-actions .btn { flex:1; justify-content:center; }
       .form-grid { grid-template-columns: 1fr; }
       .api-grid { grid-template-columns: 1fr; }
       .runtime-grid { grid-template-columns: 1fr; }
@@ -466,7 +486,7 @@
     </nav>
     <div class="sidebar-footer">
       <div class="status-text">
-        <span class="status-dot"></span> Bot Aktif • Panel v1.0
+        <span class="status-dot" id="host-footer-dot"></span> <span id="host-footer-status">Memeriksa host...</span>
       </div>
     </div>
   </aside>
@@ -501,6 +521,25 @@
         <div class="page-title">📊 Dashboard</div>
         <div class="page-sub">Ringkasan data Bot Abel</div>
       </div>
+      <section class="host-mode-card">
+        <div class="host-mode-head">
+          <div>
+            <div class="host-mode-title">📱💻 Mode Perangkat Bot</div>
+            <div class="host-mode-meta" id="host-mode-meta">Memeriksa perangkat dan mode...</div>
+          </div>
+          <span class="host-role-badge standby" id="host-role-badge">MEMUAT</span>
+        </div>
+        <div class="host-mode-grid">
+          <div>
+            <div class="host-address" id="host-address">Panel lokal sedang diperiksa...</div>
+            <div class="host-warning">Gunakan PRIMARY hanya pada satu perangkat. Saat Termux PRIMARY, ubah PC menjadi STANDBY agar bot tidak membalas dua kali.</div>
+          </div>
+          <div class="host-actions">
+            <button class="btn btn-primary btn-sm" id="host-primary-btn" onclick="changeHostRole('primary')">▶ Jadikan PRIMARY</button>
+            <button class="btn btn-danger btn-sm" id="host-standby-btn" onclick="changeHostRole('standby')">⏸ Jadikan STANDBY</button>
+          </div>
+        </div>
+      </section>
       <div class="stats-grid">
         <div class="stat-card purple">
           <div class="stat-icon">📦</div>
@@ -858,6 +897,7 @@
   let broadcastPollTimer = null;
   let botDuoData = null;
   let botStatusPollTimer = null;
+  let hostModeData = null;
   const providerTestResults = {};
   let editingId = null;
   let isAktif = true;
@@ -883,9 +923,11 @@
     await loadSettings();
     await loadApiKeys();
     await loadTunnelUrl();
+    await loadHostMode();
     updateBroadcastPreview();
     // Refresh URL setiap 30 detik (jika tunnel baru aktif)
     setInterval(loadTunnelUrl, 30000);
+    setInterval(loadHostMode, 5000);
   }
 
   // ── Tunnel URL ────────────────────────────────────────────
@@ -901,19 +943,66 @@
         openEl.href = r.url;
       } else {
         banner.style.display = 'flex';
-        urlEl.textContent = r.localUrl + ' (lokal saja - jalankan cloudflared untuk link publik)';
+        const localAccess = r.preferredUrl || r.localUrl;
+        urlEl.textContent = localAccess + (r.lanUrls?.length ? ' (jaringan lokal)' : ' (perangkat ini)');
         urlEl.style.color = 'var(--warning)';
-        openEl.href = r.localUrl;
+        openEl.href = localAccess;
       }
     } catch(e) {}
   }
 
   function copyUrl() {
-    const url = document.getElementById('public-url').textContent;
-    if (url && !url.includes('lokal')) {
-      navigator.clipboard.writeText(url).then(() => showToast('✅ Link disalin!'));
-    } else {
-      showToast('⚠️ Jalankan cloudflared untuk link publik', 'error');
+    const url = document.getElementById('open-url').href;
+    if (!url || url.endsWith('#')) return showToast('⚠️ Link panel belum tersedia', 'error');
+    navigator.clipboard.writeText(url).then(() => showToast('✅ Link disalin!'));
+  }
+
+  async function loadHostMode() {
+    try {
+      const response = await fetch('/api/host-mode');
+      hostModeData = await parseApiResponse(response);
+      const role = hostModeData.role === 'primary' ? 'primary' : 'standby';
+      const platformLabels = { termux: 'HP Termux', windows: 'PC Windows', linux: 'Linux', darwin: 'macOS' };
+      const platform = platformLabels[hostModeData.platform] || hostModeData.platform;
+      document.getElementById('host-mode-meta').textContent = `${hostModeData.hostName} • ${platform}`;
+      const badge = document.getElementById('host-role-badge');
+      badge.className = `host-role-badge ${role}`;
+      badge.textContent = role === 'primary' ? '● PRIMARY — BOT AKTIF' : '● STANDBY — PANEL SAJA';
+      const urls = [hostModeData.localUrl, ...(hostModeData.lanUrls || [])];
+      if (hostModeData.tunnelUrl) urls.push(hostModeData.tunnelUrl);
+      document.getElementById('host-address').innerHTML = urls
+        .filter(Boolean)
+        .map((url, index) => `${index ? 'Akses lain' : 'Panel'}: <a href="${escapeHtml(url)}" target="_blank" style="color:var(--accent)">${escapeHtml(url)}</a>`)
+        .join('<br/>');
+      document.getElementById('host-primary-btn').disabled = role === 'primary';
+      document.getElementById('host-standby-btn').disabled = role === 'standby';
+      const footer = document.getElementById('host-footer-status');
+      const dot = document.getElementById('host-footer-dot');
+      footer.textContent = role === 'primary' ? 'Bot PRIMARY • Panel v1.1' : 'PC/HP STANDBY • Panel v1.1';
+      dot.style.background = role === 'primary' ? 'var(--success)' : 'var(--warning)';
+    } catch (error) {
+      document.getElementById('host-mode-meta').textContent = `Status host gagal dimuat: ${error.message}`;
+    }
+  }
+
+  async function changeHostRole(role) {
+    const primary = role === 'primary';
+    const warning = primary
+      ? 'Aktifkan bot WhatsApp di perangkat ini sebagai PRIMARY?\n\nPastikan bot pada PC/HP lain sudah STANDBY agar tidak membalas dua kali.'
+      : 'Jadikan perangkat ini STANDBY?\n\nPanel tetap hidup, tetapi koneksi bot WhatsApp di perangkat ini akan dihentikan.';
+    if (!confirm(warning)) return;
+    try {
+      const response = await fetch('/api/host-mode', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ role }),
+      });
+      await parseApiResponse(response);
+      showToast(primary ? '✅ Host menjadi PRIMARY; bot sedang diaktifkan' : '⏸ Host menjadi STANDBY; panel tetap aktif');
+      await loadHostMode();
+      if (document.getElementById('page-duo-bot').classList.contains('active')) await loadBotDuo();
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
     }
   }
 
@@ -1400,7 +1489,7 @@
     const stateLabels = {
       connected: '● TERHUBUNG', connecting: '● MENGHUBUNGKAN', reconnecting: '● MENYAMBUNG ULANG',
       preparing_pairing: '● MENYIAPKAN KODE', waiting_pairing: '● PERLU PAIRING', waiting_qr: '● PERLU SCAN QR', disabled: '● NONAKTIF',
-      logged_out: '● KELUAR', error: '● ERROR', pairing_error: '● PAIRING GAGAL', offline: '● OFFLINE',
+      standby: '● STANDBY', logged_out: '● KELUAR', error: '● ERROR', pairing_error: '● PAIRING GAGAL', offline: '● OFFLINE',
     };
     grid.innerHTML = Object.entries(profiles).map(([id, profile]) => {
       const status = statuses[id] || {};
