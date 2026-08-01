@@ -81,21 +81,41 @@ function markImage(buffer, provider, mimeType = "") {
 
 const ART_STYLE_PATTERN = /\b(?:anime|kartun|cartoon|ilustrasi|illustration|vector|vektor|logo|ikon|icon|3d|watercolor|cat air|sketsa|sketch|pixel art|comic|komik|claymation)\b/i;
 const AFFILIATE_PATTERN = /\b(?:affiliate|afiliasi|jualan|promosi|iklan|produk|marketplace|tiktok shop|shopee)\b/i;
+const HUMAN_SUBJECT_PATTERN = /\b(?:orang|manusia|wanita|perempuan|gadis|pria|laki(?:-laki)?|cowok|cewek|model|talent|influencer|wajah|potret|portrait|person|people|woman|women|girl|man|men|boy|human)\b/i;
+const ARCHITECTURE_PATTERN = /\b(?:resort|hotel|villa|vila|rumah|gedung|bangunan|arsitektur|interior|eksterior|kamar|restoran|cafe|kafe|taman|kolam|pantai|landscape|pemandangan)\b/i;
+
+// Koreksi terbatas untuk salah ketik visual yang sangat umum. Jangan mengubah
+// kata lain agar nama produk dan merek pengguna tetap persis.
+export function normalizeImageRequest(prompt) {
+  return String(prompt || "")
+    .trim()
+    .replace(/\btemoat\b/gi, "tempat")
+    .replace(/\b(?:risot|resot|risort)\b/gi, "resort")
+    .replace(/\b(?:asestic|aestetic|estetic)\b/gi, "aesthetic")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, 6000);
+}
 
 export function buildRealisticImagePrompt(prompt) {
-  const base = String(prompt || "").trim().slice(0, 6000);
+  const base = normalizeImageRequest(prompt);
   if (!base) throw new Error("Deskripsi gambar tidak boleh kosong");
 
   const requestedArtStyle = ART_STYLE_PATTERN.test(base);
   const affiliateCreative = AFFILIATE_PATTERN.test(base);
+  const hasHumanSubject = HUMAN_SUBJECT_PATTERN.test(base);
+  const architectureScene = ARCHITECTURE_PATTERN.test(base);
   const qualityDirection = requestedArtStyle
     ? "Follow the requested visual style faithfully with polished professional execution, coherent anatomy, clean composition, precise materials, and consistent details."
-    : "Create a premium photorealistic image with lifelike anatomy, physically plausible materials, natural skin texture, realistic reflections, professional commercial photography, cinematic but believable lighting, sharp subject focus, and refined high-resolution detail.";
+    : hasHumanSubject
+      ? "Create a premium photorealistic image with lifelike anatomy, natural skin texture, physically plausible materials, realistic reflections, professional commercial photography, cinematic but believable lighting, sharp subject focus, and refined high-resolution detail."
+      : architectureScene
+        ? "Create premium photorealistic architectural photography with believable scale, structurally coherent architecture, physically plausible materials, realistic reflections, natural environmental detail, professional composition, cinematic but believable lighting, and refined high-resolution detail."
+        : "Create a premium photorealistic image with physically plausible materials, accurate shapes, realistic reflections, professional commercial photography, cinematic but believable lighting, sharp subject focus, and refined high-resolution detail.";
   const commercialDirection = affiliateCreative
     ? "Compose it as a high-converting affiliate product creative: make the main product immediately clear, use a clean premium setting, strong visual hierarchy, and useful negative space for optional marketing copy."
     : "Use a balanced composition, natural depth, and a believable environment.";
 
-  return `${base}\n\nQUALITY DIRECTION:\n${qualityDirection}\n${commercialDirection}\nPreserve every explicit subject, color, brand, camera, layout, and aspect-ratio instruction from the user. Do not add logos, watermarks, random letters, deformed hands, duplicated objects, or unreadable text. Only render text when the user explicitly requests exact wording.`;
+  return `USER REQUEST — AUTHORITATIVE:\n${base}\n\nSUBJECT LOCK:\nRender the user's requested subject exactly as the dominant subject. Do not replace it with an unrelated subject. Add only environmental elements that are necessary to support the requested scene.\n\nQUALITY DIRECTION:\n${qualityDirection}\n${commercialDirection}\nPreserve every explicit subject, color, brand, camera, layout, and aspect-ratio instruction from the user. Do not add logos, watermarks, random letters, deformed hands, duplicated objects, or unreadable text. Only render text when the user explicitly requests exact wording.`;
 }
 
 function imageAspectRatio(prompt, options = {}) {
@@ -151,6 +171,8 @@ async function generateGeminiImage(prompt, settings, options = {}) {
     settings.imageModels.gemini,
     "gemini-3-pro-image",
     "gemini-3.1-flash-image",
+    "gemini-3.1-flash-lite-image",
+    "gemini-2.5-flash-image",
   ].filter(Boolean))];
   let lastError;
 
@@ -181,7 +203,13 @@ async function generateGeminiImage(prompt, settings, options = {}) {
         const inline = interactionImage || legacyPart?.inlineData || legacyPart?.inline_data;
         if (!inline?.data) throw new Error("Gemini tidak mengembalikan data gambar");
         console.log(`[IMG] Gemini/${model} slot ${index + 1}`);
-        const label = model === "gemini-3-pro-image" ? "Nano Banana Pro" : "Nano Banana 2";
+        const labels = {
+          "gemini-3-pro-image": "Nano Banana Pro",
+          "gemini-3.1-flash-image": "Nano Banana 2",
+          "gemini-3.1-flash-lite-image": "Nano Banana 2 Lite",
+          "gemini-2.5-flash-image": "Nano Banana",
+        };
+        const label = labels[model] || "Nano Banana";
         return markImage(Buffer.from(inline.data, "base64"), `Gemini ${label} (${model})`, inline.mimeType || inline.mime_type);
       });
     } catch (error) {

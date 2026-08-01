@@ -20,7 +20,7 @@ import {
 import { normalizeBroadcastRequest } from "../src/broadcast-store.js";
 import { DEFAULT_BOT_PROFILES, normalizePhoneNumber } from "../src/bot-profile-store.js";
 import { normalizeHostRole } from "../src/host-mode-store.js";
-import { buildRealisticImagePrompt } from "../src/image.js";
+import { buildRealisticImagePrompt, normalizeImageRequest } from "../src/image.js";
 import {
   ambilPesanGambar,
   ambilPromptGambar,
@@ -298,6 +298,17 @@ test("prompt gambar otomatis ditingkatkan untuk hasil realistis", () => {
   const styled = buildRealisticImagePrompt("ilustrasi anime kucing di taman");
   assert.match(styled, /requested visual style faithfully/i);
   assert.doesNotMatch(styled, /premium photorealistic image/i);
+
+  assert.equal(normalizeImageRequest("risot mewah di Bali"), "resort mewah di Bali");
+  assert.equal(
+    normalizeImageRequest("buat sebuah temoat risort yang sangat asestic"),
+    "buat sebuah tempat resort yang sangat aesthetic"
+  );
+  const resort = buildRealisticImagePrompt("risot tropis di tepi pantai");
+  assert.match(resort, /USER REQUEST — AUTHORITATIVE:\nresort tropis/i);
+  assert.match(resort, /photorealistic architectural photography/i);
+  assert.doesNotMatch(resort, /natural skin texture|lifelike anatomy/i);
+  assert.match(resort, /Do not replace it with an unrelated subject/i);
 });
 
 test("gambar langsung, gambar kutipan, dan konteks reply dikenali", () => {
