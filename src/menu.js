@@ -59,7 +59,8 @@ Berikut daftar perintah yang tersedia:
 ├ ${PREFIX}cs - Hubungi customer service
 ├ ${PREFIX}faq - Pertanyaan umum
 ├ ${PREFIX}ai [pesan] - Tanya AI kami
-├ ${PREFIX}gambar [deskripsi] - Buat gambar GPT
+├ ${PREFIX}gambar [deskripsi] - Buat gambar Nano Banana Pro
+├ ${PREFIX}affiliate [produk] - Prompt konten jualan lengkap
 └ ${PREFIX}reset - Reset percakapan AI
 
 ${isGrup ? `*👥 FITUR GRUP*\n├ ${PREFIX}tagall - Tag semua anggota\n├ ${PREFIX}rules - Peraturan grup\n└ ${PREFIX}link - Info link grup\n\n` : ""}*Contoh:* ${PREFIX}ai Berapa harga produk A?

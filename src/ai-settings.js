@@ -36,7 +36,7 @@ export const DEFAULT_AI_SETTINGS = Object.freeze({
     xai: process.env.XAI_VISION_MODEL || "grok-4.5",
   },
   imageModels: {
-    gemini: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
+    gemini: process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image",
     openai: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
     xai: process.env.XAI_IMAGE_MODEL || "grok-imagine-image",
     seadream: process.env.SEADREAM_IMAGE_MODEL || "dola-seedream-5-0-pro-260628",

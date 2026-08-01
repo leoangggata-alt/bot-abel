@@ -79,6 +79,51 @@ function markImage(buffer, provider, mimeType = "") {
   return buffer;
 }
 
+const ART_STYLE_PATTERN = /\b(?:anime|kartun|cartoon|ilustrasi|illustration|vector|vektor|logo|ikon|icon|3d|watercolor|cat air|sketsa|sketch|pixel art|comic|komik|claymation)\b/i;
+const AFFILIATE_PATTERN = /\b(?:affiliate|afiliasi|jualan|promosi|iklan|produk|marketplace|tiktok shop|shopee)\b/i;
+
+export function buildRealisticImagePrompt(prompt) {
+  const base = String(prompt || "").trim().slice(0, 6000);
+  if (!base) throw new Error("Deskripsi gambar tidak boleh kosong");
+
+  const requestedArtStyle = ART_STYLE_PATTERN.test(base);
+  const affiliateCreative = AFFILIATE_PATTERN.test(base);
+  const qualityDirection = requestedArtStyle
+    ? "Follow the requested visual style faithfully with polished professional execution, coherent anatomy, clean composition, precise materials, and consistent details."
+    : "Create a premium photorealistic image with lifelike anatomy, physically plausible materials, natural skin texture, realistic reflections, professional commercial photography, cinematic but believable lighting, sharp subject focus, and refined high-resolution detail.";
+  const commercialDirection = affiliateCreative
+    ? "Compose it as a high-converting affiliate product creative: make the main product immediately clear, use a clean premium setting, strong visual hierarchy, and useful negative space for optional marketing copy."
+    : "Use a balanced composition, natural depth, and a believable environment.";
+
+  return `${base}\n\nQUALITY DIRECTION:\n${qualityDirection}\n${commercialDirection}\nPreserve every explicit subject, color, brand, camera, layout, and aspect-ratio instruction from the user. Do not add logos, watermarks, random letters, deformed hands, duplicated objects, or unreadable text. Only render text when the user explicitly requests exact wording.`;
+}
+
+function imageAspectRatio(prompt, options = {}) {
+  if (options.aspectRatio) return String(options.aspectRatio);
+  const size = String(options.size || "");
+  const [width, height] = size.split("x").map(Number);
+  if (width > 0 && height > 0) {
+    if (width === height) return "1:1";
+    if (width * 16 === height * 9) return "9:16";
+    if (width * 9 === height * 16) return "16:9";
+    if (width * 5 === height * 4) return "4:5";
+    if (width * 4 === height * 5) return "5:4";
+  }
+  return AFFILIATE_PATTERN.test(prompt) ? "4:5" : "1:1";
+}
+
+function findInteractionImage(json = {}) {
+  const direct = json.output_image || json.outputImage;
+  if (direct?.data) return direct;
+
+  const topLevel = [...(json.outputs || []), ...(json.output || [])];
+  const blocks = [
+    ...topLevel,
+    ...(json.steps || []).flatMap(step => step.content || step.outputs || []),
+  ];
+  return blocks.find(block => block?.type === "image" && block?.data);
+}
+
 function apiError(provider, status, json) {
   const message = String(json?.error?.message || json?.message || `HTTP ${status}`)
     .replace(/\b(?:sk|xai)-[A-Za-z0-9_.*-]+/gi, "[API_KEY]")
@@ -101,28 +146,50 @@ async function withCandidates(provider, operation) {
   throw lastError || new Error(`${provider}: semua slot gagal`);
 }
 
-async function generateGeminiImage(prompt, settings) {
-  const model = settings.imageModels.gemini;
-  return withCandidates("gemini", async (key, index) => {
-    const { status, json } = await requestJson(
-      "POST",
-      "generativelanguage.googleapis.com",
-      `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
-      {},
-      {
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
-      }
-    );
-    if (status < 200 || status >= 300) throw apiError("Gemini", status, json);
-    const imagePart = (json.candidates?.[0]?.content?.parts || []).find(
-      part => part.inlineData?.data || part.inline_data?.data
-    );
-    const inline = imagePart?.inlineData || imagePart?.inline_data;
-    if (!inline?.data) throw new Error("Gemini tidak mengembalikan data gambar");
-    console.log(`[IMG] Gemini/${model} slot ${index + 1}`);
-    return markImage(Buffer.from(inline.data, "base64"), `Gemini Nano Banana (${model})`, inline.mimeType || inline.mime_type);
-  });
+async function generateGeminiImage(prompt, settings, options = {}) {
+  const models = [...new Set([
+    settings.imageModels.gemini,
+    "gemini-3-pro-image",
+    "gemini-3.1-flash-image",
+  ].filter(Boolean))];
+  let lastError;
+
+  for (const model of models) {
+    try {
+      return await withCandidates("gemini", async (key, index) => {
+        const { status, json } = await requestJson(
+          "POST",
+          "generativelanguage.googleapis.com",
+          "/v1beta/interactions",
+          { "x-goog-api-key": key },
+          {
+            model,
+            input: [{ type: "text", text: prompt }],
+            response_format: {
+              type: "image",
+              mime_type: "image/jpeg",
+              aspect_ratio: imageAspectRatio(prompt, options),
+              image_size: String(options.imageSize || "2K").toUpperCase(),
+            },
+          }
+        );
+        if (status < 200 || status >= 300) throw apiError("Gemini", status, json);
+        const interactionImage = findInteractionImage(json);
+        const legacyPart = (json.candidates?.[0]?.content?.parts || []).find(
+          part => part.inlineData?.data || part.inline_data?.data
+        );
+        const inline = interactionImage || legacyPart?.inlineData || legacyPart?.inline_data;
+        if (!inline?.data) throw new Error("Gemini tidak mengembalikan data gambar");
+        console.log(`[IMG] Gemini/${model} slot ${index + 1}`);
+        const label = model === "gemini-3-pro-image" ? "Nano Banana Pro" : "Nano Banana 2";
+        return markImage(Buffer.from(inline.data, "base64"), `Gemini ${label} (${model})`, inline.mimeType || inline.mime_type);
+      });
+    } catch (error) {
+      lastError = error;
+      console.warn(`[IMG] Gemini model ${model} gagal, mencoba model berikutnya: ${error.message}`);
+    }
+  }
+  throw lastError || new Error("Semua model gambar Gemini gagal");
 }
 
 async function generateOpenAIImage(prompt, settings, options) {
@@ -268,11 +335,12 @@ async function generateWithProvider(provider, prompt, settings, options) {
 
 export async function generateImage(prompt, options = {}) {
   const settings = getAISettings();
+  const enhancedPrompt = buildRealisticImagePrompt(prompt);
   let lastError;
   for (const provider of settings.imageOrder) {
     try {
       console.log(`[IMG] Mencoba ${provider}: "${prompt.slice(0, 60)}"`);
-      return await generateWithProvider(provider, prompt, settings, options);
+      return await generateWithProvider(provider, enhancedPrompt, settings, options);
     } catch (error) {
       lastError = error;
       console.warn(`[IMG] Beralih dari ${provider}: ${error.message}`);

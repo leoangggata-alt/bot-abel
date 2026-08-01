@@ -52,6 +52,18 @@ export function ambilPromptGambar(teks = "") {
   return "";
 }
 
+export function isPermintaanPromptAffiliate(teks = "") {
+  const nilai = String(teks).toLowerCase().trim();
+  const menyebutAffiliate = /\b(?:affiliate|afiliasi|affiliator)\b/.test(nilai);
+  const memintaKonten = /\b(?:prompt|konten|content|skrip|script|naskah|caption|hook|ide|jualan|promosi|iklan|ugc|video)\b/.test(nilai);
+  return menyebutAffiliate && memintaKonten;
+}
+
+export function buildAffiliatePromptRequest(request = "") {
+  const kebutuhan = String(request || "").trim().slice(0, 2500) || "produk yang ingin dipromosikan";
+  return `Bertindak sebagai creative strategist dan copywriter affiliate Indonesia. Buat paket konten jualan yang detail, praktis, dan langsung dapat dipakai berdasarkan kebutuhan berikut:\n\n${kebutuhan}\n\nWajib berikan dengan struktur:\n1. Ringkasan produk, target audiens, masalah audiens, dan angle penjualan utama.\n2. Lima hook pembuka yang kuat tetapi tidak menipu.\n3. Skrip video affiliate 30-45 detik: hook, masalah, demo/manfaat, bukti yang boleh disebut, CTA.\n4. Shot list per adegan lengkap dengan visual, aksi talent, dialog/voice-over, teks layar, durasi, dan transisi.\n5. Caption versi soft selling dan hard selling.\n6. CTA serta 10 hashtag relevan.\n7. Prompt visual siap salin untuk Nano Banana Pro dalam format vertikal 9:16, fotorealistis, termasuk subjek, produk, lokasi, komposisi, kamera, pencahayaan, warna, mood, dan negative constraints.\n8. Tiga variasi angle konten untuk A/B test.\n\nGunakan bahasa Indonesia natural. Jangan membuat klaim medis, jaminan hasil, harga, diskon, testimoni, atau spesifikasi yang tidak diberikan pengguna. Jika data produk kurang, tandai bagian yang harus diisi dengan [ISI DATA]. Jangan beri pembukaan panjang.`;
+}
+
 export function isPermintaanQRIS(teks = "") {
   const nilai = String(teks).toLowerCase().trim();
   const menyebutQR = /\b(qris|qr|kode qr)\b/.test(nilai);
@@ -290,6 +302,12 @@ export async function handleMessage(sock, msg) {
       }
     }
 
+    if (!isGrup && isPermintaanPromptAffiliate(trimTeks)) {
+      const balasan = await chatAI(senderId, buildAffiliatePromptRequest(trimTeks));
+      await kirim(sock, from, balasan);
+      return;
+    }
+
     // ── PERSONAL CHAT: semua pesan langsung ke AI (seperti ChatGPT) ──
     if (!isGrup) {
       const balasan = await chatAI(senderId, gabungkanKonteksKutipan(trimTeks, quotedText));
@@ -325,6 +343,15 @@ export async function handleMessage(sock, msg) {
             promptGambar,
             `@${senderNum} 🎨 Ini gambarnya!`
           );
+          return;
+        }
+
+        if (isPermintaanPromptAffiliate(pesanBersih)) {
+          const balasan = await chatAI(
+            senderId,
+            gabungkanKonteksKutipan(buildAffiliatePromptRequest(pesanBersih), quotedText)
+          );
+          await kirim(sock, from, `@${senderNum} ${balasan}`, [senderId]);
           return;
         }
 
@@ -534,9 +561,30 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         if (promptGambar) {
           await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
         } else {
-          const balasan = await chatAI(senderId, gabungkanKonteksKutipan(sisa, quotedText));
+          const aiRequest = isPermintaanPromptAffiliate(sisa)
+            ? buildAffiliatePromptRequest(sisa)
+            : sisa;
+          const balasan = await chatAI(senderId, gabungkanKonteksKutipan(aiRequest, quotedText));
           await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
         }
+      }
+      break;
+
+    case "affiliate":
+    case "afiliasi":
+    case "kontenjualan":
+      if (!sisa) {
+        await kirim(
+          sock,
+          from,
+          `🛍️ *Pembuat Konten Affiliate*\n\nCara pakai:\n*${PREFIX}affiliate [nama produk + detail]*\n\nContoh:\n*${PREFIX}affiliate serum wajah untuk wanita usia 20-35 tahun, gaya UGC TikTok*`
+        );
+      } else {
+        const balasan = await chatAI(
+          senderId,
+          gabungkanKonteksKutipan(buildAffiliatePromptRequest(sisa), quotedText)
+        );
+        await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
       }
       break;
 
@@ -553,7 +601,9 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         await kirimGambar(sock, from, promptGambar, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");
       } else {
         const topik = sisa || "gambar kreatif";
-        const promptReq = `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
+        const promptReq = isPermintaanPromptAffiliate(`${cmd} ${sisa}`)
+          ? buildAffiliatePromptRequest(`${cmd} ${sisa}`)
+          : `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
         const balasan = await chatAI(senderId, gabungkanKonteksKutipan(promptReq, quotedText));
         await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
       }
@@ -574,7 +624,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
           `• !gambar mobil sport merah di jalan kota\n` +
           `• !gambar pemandangan pantai bali saat sunset\n` +
           `• !gambar kucing lucu memakai topi\n\n` +
-          `_Powered by GPT Image 2 • proses dapat memerlukan beberapa saat_`
+          `_Prioritas Gemini Nano Banana Pro • fallback otomatis jika limit_`
         );
       } else {
         await kirimGambar(sock, from, sisa, isGrup ? `@${senderNum} 🎨 Ini gambarnya!` : "");

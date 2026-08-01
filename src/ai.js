@@ -31,6 +31,7 @@ function buildSystemPrompt(settings) {
 - Jawab ringkas tetapi lengkap; gunakan poin bila membantu.
 - Ingat konteks percakapan yang diberikan.
 - Anggota grup boleh memberi pertanyaan dan perintah. Ikuti perintah yang aman dan masih dalam kemampuan bot.
+- Untuk konten affiliate/jualan, buat keluaran yang siap pakai: hook, skrip, shot list, caption, CTA, hashtag, dan prompt visual. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
 - Jika diminta membuat gambar, jangan hanya memberi prompt; sistem bot akan menangani generator gambar sebelum chat ini.
 - Tolak secara sopan permintaan berbahaya atau ilegal.
 - Jika tidak yakin, jelaskan batas kepastian dengan singkat.${custom}`;
@@ -154,7 +155,7 @@ function openAIText(json) {
     .trim();
 }
 
-async function callOpenAI(messages, userId, settings, image = null) {
+async function callOpenAI(messages, userId, settings, image = null, maxOutputTokens = 1200) {
   const model = image ? settings.visionModels.openai : settings.textModels.openai;
   let lastError;
   for (const [index, candidate] of requireCandidates("openai").entries()) {
@@ -167,7 +168,7 @@ async function callOpenAI(messages, userId, settings, image = null) {
           model,
           instructions: buildSystemPrompt(settings),
           input: withOpenAIVision(messages, image),
-          max_output_tokens: 900,
+          max_output_tokens: maxOutputTokens,
           store: false,
           safety_identifier: crypto.createHash("sha256").update(String(userId)).digest("hex"),
         }
@@ -186,7 +187,7 @@ async function callOpenAI(messages, userId, settings, image = null) {
   throw lastError || new Error("OpenAI gagal");
 }
 
-async function callOpenAICompatible(provider, hostname, path, messages, settings, image = null) {
+async function callOpenAICompatible(provider, hostname, path, messages, settings, image = null, maxOutputTokens = 1200) {
   const configured = image ? settings.visionModels[provider] : settings.textModels[provider];
   const modelFallbacks = image
     ? [configured]
@@ -209,7 +210,7 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
               { role: "system", content: buildSystemPrompt(settings) },
               ...withCompatibleVision(messages, image),
             ],
-            max_tokens: 900,
+            max_tokens: maxOutputTokens,
             temperature: settings.temperature,
           }
         );
@@ -228,7 +229,7 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
   throw lastError || new Error(`${provider} gagal`);
 }
 
-async function callGemini(messages, settings, image = null) {
+async function callGemini(messages, settings, image = null, maxOutputTokens = 1200) {
   const contents = messages.map((message, index) => ({
     role: message.role === "assistant" ? "model" : "user",
     parts: image && index === messages.length - 1
@@ -250,7 +251,7 @@ async function callGemini(messages, settings, image = null) {
         {
           system_instruction: { parts: [{ text: buildSystemPrompt(settings) }] },
           contents,
-          generationConfig: { maxOutputTokens: 900 },
+          generationConfig: { maxOutputTokens },
         }
       );
       const text = (json.candidates?.[0]?.content?.parts || [])
@@ -270,12 +271,12 @@ async function callGemini(messages, settings, image = null) {
   throw lastError || new Error("Gemini gagal");
 }
 
-async function callProvider(provider, messages, userId, settings, image = null) {
+async function callProvider(provider, messages, userId, settings, image = null, maxOutputTokens = 1200) {
   switch (provider) {
-    case "openai": return callOpenAI(messages, userId, settings, image);
-    case "gemini": return callGemini(messages, settings, image);
-    case "groq": return callOpenAICompatible("groq", "api.groq.com", "/openai/v1/chat/completions", messages, settings, image);
-    case "xai": return callOpenAICompatible("xai", "api.x.ai", "/v1/chat/completions", messages, settings, image);
+    case "openai": return callOpenAI(messages, userId, settings, image, maxOutputTokens);
+    case "gemini": return callGemini(messages, settings, image, maxOutputTokens);
+    case "groq": return callOpenAICompatible("groq", "api.groq.com", "/openai/v1/chat/completions", messages, settings, image, maxOutputTokens);
+    case "xai": return callOpenAICompatible("xai", "api.x.ai", "/v1/chat/completions", messages, settings, image, maxOutputTokens);
     default: throw new Error(`Provider teks ${provider} tidak dikenal`);
   }
 }
@@ -286,6 +287,9 @@ export async function chatAI(userId, pesan, options = {}) {
   try {
     const settings = getAISettings();
     const image = normalizeVisionInput(options.image || null);
+    const isLongFormAffiliate = /creative strategist dan copywriter affiliate/i.test(pesan);
+    const requestedMax = Number(options.maxOutputTokens || (isLongFormAffiliate ? 4000 : 1200));
+    const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     if (!history[userId]) history[userId] = [];
     const userHistory = history[userId];
     const providerPrompt = image
@@ -298,7 +302,7 @@ export async function chatAI(userId, pesan, options = {}) {
     const providerOrder = image ? settings.visionOrder : settings.textOrder;
     for (const provider of providerOrder) {
       try {
-        balasan = await callProvider(provider, messages, userId, settings, image);
+        balasan = await callProvider(provider, messages, userId, settings, image, maxOutputTokens);
         if (balasan) break;
       } catch (error) {
         lastError = error;

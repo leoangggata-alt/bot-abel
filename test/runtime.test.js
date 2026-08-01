@@ -6,12 +6,15 @@ import { fileURLToPath } from "node:url";
 
 import { chatAI, isCreatorQuestion, normalizeVisionInput } from "../src/ai.js";
 import { normalizeAISettings } from "../src/ai-settings.js";
+import { buildRealisticImagePrompt } from "../src/image.js";
 import {
   ambilPesanGambar,
   ambilTeksPesan,
   ambilTeksKutipan,
+  buildAffiliatePromptRequest,
   gabungkanKonteksKutipan,
   isPermintaanMemberGrup,
+  isPermintaanPromptAffiliate,
   isPermintaanQRIS,
 } from "../src/handler.js";
 import { kirimQRIS } from "../src/order.js";
@@ -51,6 +54,7 @@ test("pengaturan panel dinormalisasi dengan aman", () => {
   assert.deepEqual(settings.textOrder, ["xai", "openai"]);
   assert.deepEqual(settings.imageOrder, ["gemini", "openai", "pollinations"]);
   assert.deepEqual(settings.visionOrder, ["groq", "gemini"]);
+  assert.equal(settings.imageModels.gemini, "gemini-3-pro-image");
   assert.equal(settings.memoryTurns, 50);
   assert.equal(settings.temperature, 0);
 });
@@ -59,6 +63,26 @@ test("perintah member grup dikenali tanpa membalas obrolan biasa", () => {
   assert.equal(isPermintaanMemberGrup("tolong jelaskan cara kerjanya"), true);
   assert.equal(isPermintaanMemberGrup("berapa hasil 12 x 8?"), true);
   assert.equal(isPermintaanMemberGrup("lagi ngopi nih teman-teman"), false);
+});
+
+test("prompt konten affiliate dikenali dan disusun lengkap", () => {
+  assert.equal(isPermintaanPromptAffiliate("buatkan prompt konten affiliate untuk serum"), true);
+  assert.equal(isPermintaanPromptAffiliate("saya baru daftar affiliate"), false);
+  const request = buildAffiliatePromptRequest("serum wajah untuk TikTok");
+  assert.match(request, /Lima hook/);
+  assert.match(request, /Shot list/);
+  assert.match(request, /Nano Banana Pro/);
+  assert.match(request, /Jangan membuat klaim medis/);
+});
+
+test("prompt gambar otomatis ditingkatkan untuk hasil realistis", () => {
+  const realistic = buildRealisticImagePrompt("wanita memegang botol parfum di studio");
+  assert.match(realistic, /premium photorealistic image/i);
+  assert.match(realistic, /Do not add logos, watermarks/i);
+
+  const styled = buildRealisticImagePrompt("ilustrasi anime kucing di taman");
+  assert.match(styled, /requested visual style faithfully/i);
+  assert.doesNotMatch(styled, /premium photorealistic image/i);
 });
 
 test("gambar langsung, gambar kutipan, dan konteks reply dikenali", () => {
