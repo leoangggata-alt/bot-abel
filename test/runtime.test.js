@@ -12,6 +12,11 @@ import {
   normalizeVisionInput,
 } from "../src/ai.js";
 import { normalizeAISettings } from "../src/ai-settings.js";
+import {
+  formatGroupBroadcastMessage,
+  sendBroadcastToGroups,
+} from "../src/broadcast.js";
+import { normalizeBroadcastRequest } from "../src/broadcast-store.js";
 import { buildRealisticImagePrompt } from "../src/image.js";
 import {
   ambilPesanGambar,
@@ -117,6 +122,47 @@ test("handler grup diam tanpa prefix dan merespons command bertanda seru", async
   await handleMessage(sock, { key: baseKey, message: { conversation: "!menu" } });
   assert.equal(sent.length, 1);
   assert.match(sent[0].content.text, /!menu - Tampilkan menu ini/i);
+});
+
+test("permintaan siaran memvalidasi tujuan grup dan panjang pesan", () => {
+  const groups = [
+    { id: "111@g.us", name: "Grup Satu", participantCount: 12 },
+    { id: "222@g.us", name: "Grup Dua", participantCount: 8 },
+  ];
+  const all = normalizeBroadcastRequest({ message: " Promo hari ini ", targetMode: "all" }, groups);
+  assert.equal(all.message, "Promo hari ini");
+  assert.equal(all.targets.length, 2);
+
+  const selected = normalizeBroadcastRequest({
+    message: "Pengumuman",
+    targetMode: "selected",
+    groupIds: ["222@g.us", "tidak-valid@g.us"],
+  }, groups);
+  assert.deepEqual(selected.targets.map(group => group.id), ["222@g.us"]);
+  assert.throws(
+    () => normalizeBroadcastRequest({ message: "", targetMode: "all" }, groups),
+    /wajib diisi/,
+  );
+});
+
+test("siaran grup memakai socket bot dan mencatat hasil per grup", async () => {
+  const sent = [];
+  const sock = {
+    sendMessage: async (to, content) => {
+      if (to === "222@g.us") throw new Error("grup tidak tersedia");
+      sent.push({ to, content });
+    },
+  };
+  const targets = [
+    { id: "111@g.us", name: "Grup Satu" },
+    { id: "222@g.us", name: "Grup Dua" },
+  ];
+  const results = await sendBroadcastToGroups(sock, targets, "Promo spesial", { delayMs: 0 });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, "111@g.us");
+  assert.match(sent[0].content.text, /^📢/);
+  assert.match(formatGroupBroadcastMessage("Promo spesial"), /Promo spesial$/);
+  assert.deepEqual(results.map(result => result.status), ["success", "failed"]);
 });
 
 test("mode AI otomatis mengenali vision, jualan, humor, kreatif, dan fakta", () => {

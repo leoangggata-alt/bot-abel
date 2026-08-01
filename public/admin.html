@@ -333,6 +333,44 @@
     .key-add input { font-size: 12px; padding: 9px 10px; }
     .api-empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 30px; }
 
+    /* Pesan Siaran Grup */
+    .broadcast-grid { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(320px,.8fr); gap: 18px; align-items: start; }
+    .broadcast-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .broadcast-body { padding: 20px; }
+    .broadcast-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-bottom: 18px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
+    .broadcast-status-main { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700; }
+    .broadcast-status small { color: var(--text-muted); font-weight: 500; }
+    .broadcast-target-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 14px; }
+    .target-option { display: flex; align-items: center; gap: 9px; padding: 12px; border: 1px solid var(--border); background: var(--surface2); border-radius: 9px; cursor: pointer; font-size: 13px; text-transform: none; letter-spacing: normal; color: var(--text); }
+    .target-option small { color: var(--text-muted); font-weight: 500; }
+    .target-option:has(input:checked) { border-color: var(--primary); background: var(--primary-glow); color: var(--primary-light); }
+    .target-option input { width: auto; accent-color: var(--primary); }
+    .group-picker { max-height: 230px; overflow: auto; display: grid; gap: 7px; margin-bottom: 16px; padding-right: 4px; }
+    .group-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.018); text-transform: none; letter-spacing: normal; color: var(--text); }
+    .group-row input { width: auto; accent-color: var(--primary); }
+    .group-info { min-width: 0; flex: 1; }
+    .group-name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .group-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+    .message-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; color: var(--text-muted); font-size: 11px; }
+    .broadcast-preview { margin-top: 16px; border: 1px solid rgba(16,185,129,.25); background: rgba(16,185,129,.06); border-radius: 10px; padding: 14px; }
+    .broadcast-preview-label { color: var(--success); font-size: 10px; font-weight: 800; letter-spacing: .8px; margin-bottom: 8px; }
+    .broadcast-preview-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #dbeafe; }
+    .broadcast-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 18px; }
+    .broadcast-note { color: var(--text-muted); font-size: 11px; line-height: 1.5; flex: 1; }
+    .broadcast-job-list { padding: 14px; display: grid; gap: 10px; max-height: 650px; overflow: auto; }
+    .broadcast-job { border: 1px solid var(--border); border-radius: 10px; padding: 13px; background: var(--surface2); }
+    .broadcast-job-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .broadcast-job-time { font-size: 11px; color: var(--text-muted); }
+    .job-status { font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 999px; }
+    .job-status.queued { color: #fcd34d; background: rgba(245,158,11,.14); }
+    .job-status.running { color: #67e8f9; background: rgba(6,182,212,.14); }
+    .job-status.completed { color: #6ee7b7; background: rgba(16,185,129,.14); }
+    .job-status.partial, .job-status.failed { color: #fca5a5; background: rgba(239,68,68,.14); }
+    .broadcast-job-message { margin: 10px 0; color: var(--text); font-size: 12px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+    .job-progress { height: 6px; background: rgba(255,255,255,.06); border-radius: 999px; overflow: hidden; }
+    .job-progress span { display: block; height: 100%; background: linear-gradient(90deg,var(--primary),var(--accent)); border-radius: inherit; }
+    .job-summary { display: flex; gap: 12px; margin-top: 8px; color: var(--text-muted); font-size: 10px; }
+
     @media(max-width: 768px) {
       .sidebar { display: none; }
       .main { margin-left: 0; padding: 16px; width: 100%; min-width: 0; overflow-x: hidden; }
@@ -346,6 +384,10 @@
       .key-add { grid-template-columns: 1fr; }
       .provider-card, .key-slot, .key-info { min-width: 0; }
       #page-api-keys .page-header { flex-direction: column; }
+      .broadcast-grid { grid-template-columns: 1fr; }
+      .broadcast-target-options { grid-template-columns: 1fr; }
+      .broadcast-actions { align-items: stretch; flex-direction: column; }
+      .broadcast-actions .btn { justify-content: center; }
     }
   </style>
 </head>
@@ -373,6 +415,9 @@
         <span class="icon">🛒</span> Pesanan
         <span id="order-badge" style="display:none;margin-left:auto;background:var(--danger);color:white;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700"></span>
       </div>
+      <div class="nav-item" onclick="showPage('broadcast')" id="nav-broadcast" data-nav-page="broadcast">
+        <span class="icon">📣</span> Pesan Siaran
+      </div>
       <div class="nav-label">Pengaturan</div>
       <div class="nav-item" onclick="showPage('settings')" id="nav-settings" data-nav-page="settings">
         <span class="icon">⚙️</span> Pengaturan Bot
@@ -398,6 +443,7 @@
       <button class="mobile-nav-item" data-nav-page="orders" onclick="showPage('orders')">🛒 Pesanan</button>
       <button class="mobile-nav-item" data-nav-page="settings" onclick="showPage('settings')">⚙️ Bot</button>
       <button class="mobile-nav-item" data-nav-page="api-keys" onclick="showPage('api-keys')">🔐 API Keys</button>
+      <button class="mobile-nav-item" data-nav-page="broadcast" onclick="showPage('broadcast')">📣 Siaran</button>
     </div>
 
     <!-- Public URL Banner -->
@@ -509,6 +555,73 @@
     </div>
 
     <!-- SETTINGS -->
+    <div class="page" id="page-broadcast">
+      <div class="page-header">
+        <div class="page-title">📣 Pesan Siaran Grup</div>
+        <div class="page-sub">Kirim pengumuman melalui bot ke satu, beberapa, atau semua grup WhatsApp</div>
+      </div>
+      <div class="broadcast-grid">
+        <section class="broadcast-card">
+          <div class="card-header">
+            <div class="card-title">Tulis Pesan Siaran</div>
+            <button class="btn btn-edit btn-sm" onclick="loadBroadcastPage()">🔄 Muat Grup</button>
+          </div>
+          <div class="broadcast-body">
+            <div class="broadcast-status">
+              <div class="broadcast-status-main">
+                <span class="status-dot" id="broadcast-status-dot"></span>
+                <span id="broadcast-connection">Memeriksa bot...</span>
+              </div>
+              <small id="broadcast-group-count">0 grup</small>
+            </div>
+
+            <label>Tujuan Siaran</label>
+            <div class="broadcast-target-options">
+              <label class="target-option">
+                <input type="radio" name="broadcast-target" value="all" checked onchange="toggleBroadcastTargets()"/>
+                <span><strong>Semua grup</strong><br/><small>Seluruh grup yang diikuti bot</small></span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="broadcast-target" value="selected" onchange="toggleBroadcastTargets()"/>
+                <span><strong>Pilih grup</strong><br/><small>Tentukan tujuan secara manual</small></span>
+              </label>
+            </div>
+
+            <div class="group-picker" id="broadcast-group-picker" style="display:none"></div>
+
+            <div class="form-group">
+              <label for="broadcast-message">Isi Pesan</label>
+              <textarea id="broadcast-message" rows="8" maxlength="4000" placeholder="Contoh: Promo spesial hari ini! Dapatkan harga terbaik sebelum stok habis." oninput="updateBroadcastPreview()"></textarea>
+              <div class="message-tools">
+                <span>Format WhatsApp didukung: *tebal*, _miring_, dan baris baru.</span>
+                <strong><span id="broadcast-char-count">0</span>/4000</strong>
+              </div>
+            </div>
+
+            <div class="broadcast-preview">
+              <div class="broadcast-preview-label">PRATINJAU WHATSAPP</div>
+              <div class="broadcast-preview-text" id="broadcast-preview">📢 *Bot Abel*\n\nPesan akan tampil di sini.</div>
+            </div>
+
+            <div class="broadcast-actions">
+              <div class="broadcast-note">Pesan dimasukkan ke antrean dan dikirim bertahap dengan jeda agar koneksi lebih stabil.</div>
+              <button class="btn btn-primary" id="broadcast-send-btn" onclick="sendGroupBroadcast()">📤 Kirim Siaran</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="broadcast-card">
+          <div class="card-header">
+            <div class="card-title">Riwayat Pengiriman</div>
+            <button class="btn btn-edit btn-sm" onclick="loadBroadcastJobs()">🔄</button>
+          </div>
+          <div class="broadcast-job-list" id="broadcast-job-list">
+            <div class="api-empty">Belum ada pesan siaran.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <div class="page" id="page-settings">
       <div class="page-header">
         <div class="page-title">⚙️ Pengaturan Bot</div>
@@ -678,6 +791,8 @@
   let allOrders = [];
   let apiKeyData = null;
   let aiSettingsData = null;
+  let broadcastGroups = [];
+  let broadcastPollTimer = null;
   const providerTestResults = {};
   let editingId = null;
   let isAktif = true;
@@ -703,6 +818,7 @@
     await loadSettings();
     await loadApiKeys();
     await loadTunnelUrl();
+    updateBroadcastPreview();
     // Refresh URL setiap 30 detik (jika tunnel baru aktif)
     setInterval(loadTunnelUrl, 30000);
   }
@@ -1189,12 +1305,154 @@
   }
 
   // ── Navigation ────────────────────────────────────────────
+  async function loadBroadcastPage() {
+    try {
+      const response = await fetch('/api/broadcast/groups');
+      const directory = await parseApiResponse(response);
+      broadcastGroups = directory.groups || [];
+      const status = document.getElementById('broadcast-connection');
+      const dot = document.getElementById('broadcast-status-dot');
+      status.textContent = directory.connected ? 'Bot WhatsApp terhubung' : 'Bot offline — pesan akan mengantre';
+      dot.style.background = directory.connected ? 'var(--success)' : 'var(--warning)';
+      document.getElementById('broadcast-group-count').textContent = `${broadcastGroups.length} grup tersedia`;
+      renderBroadcastGroups();
+      await loadBroadcastJobs();
+    } catch (error) {
+      document.getElementById('broadcast-connection').textContent = 'Data grup gagal dimuat';
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  }
+
+  function renderBroadcastGroups() {
+    const picker = document.getElementById('broadcast-group-picker');
+    if (!broadcastGroups.length) {
+      picker.innerHTML = '<div class="api-empty">Bot belum menemukan grup. Pastikan bot sudah terhubung dan menjadi anggota grup.</div>';
+      return;
+    }
+    picker.innerHTML = broadcastGroups.map(group => `
+      <label class="group-row">
+        <input type="checkbox" class="broadcast-group-check" value="${escapeHtml(group.id)}"/>
+        <span class="group-info">
+          <span class="group-name">${escapeHtml(group.name)}</span>
+          <span class="group-meta">${Number(group.participantCount || 0)} anggota${group.announce ? ' • hanya admin yang dapat mengirim' : ''}</span>
+        </span>
+      </label>
+    `).join('');
+  }
+
+  function getBroadcastTargetMode() {
+    return document.querySelector('input[name="broadcast-target"]:checked')?.value || 'all';
+  }
+
+  function toggleBroadcastTargets() {
+    document.getElementById('broadcast-group-picker').style.display =
+      getBroadcastTargetMode() === 'selected' ? 'grid' : 'none';
+  }
+
+  function updateBroadcastPreview() {
+    const input = document.getElementById('broadcast-message');
+    const preview = document.getElementById('broadcast-preview');
+    if (!input || !preview) return;
+    const message = input.value.trim();
+    const businessName = document.getElementById('s-business')?.value.trim() || 'Bot Abel';
+    document.getElementById('broadcast-char-count').textContent = input.value.length;
+    preview.textContent = `📢 *${businessName}*\n\n${message || 'Pesan akan tampil di sini.'}`;
+  }
+
+  async function sendGroupBroadcast() {
+    const message = document.getElementById('broadcast-message').value.trim();
+    const targetMode = getBroadcastTargetMode();
+    const groupIds = [...document.querySelectorAll('.broadcast-group-check:checked')]
+      .map(input => input.value);
+    if (!message) {
+      showToast('⚠️ Isi pesan siaran terlebih dahulu', 'error');
+      return;
+    }
+    if (!broadcastGroups.length) {
+      showToast('⚠️ Belum ada grup WhatsApp yang tersedia', 'error');
+      return;
+    }
+    if (targetMode === 'selected' && !groupIds.length) {
+      showToast('⚠️ Pilih minimal satu grup tujuan', 'error');
+      return;
+    }
+
+    const targetCount = targetMode === 'all' ? broadcastGroups.length : groupIds.length;
+    if (!confirm(`Kirim pesan ini ke ${targetCount} grup melalui bot?\n\nPeriksa isi pesan sebelum melanjutkan.`)) return;
+
+    const button = document.getElementById('broadcast-send-btn');
+    button.disabled = true;
+    button.textContent = '⏳ Memasukkan antrean...';
+    try {
+      const response = await fetch('/api/broadcast/jobs', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ message, targetMode, groupIds }),
+      });
+      const result = await parseApiResponse(response);
+      document.getElementById('broadcast-message').value = '';
+      updateBroadcastPreview();
+      showToast(`✅ Siaran ke ${result.job.total} grup masuk antrean`);
+      await loadBroadcastJobs();
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = '📤 Kirim Siaran';
+    }
+  }
+
+  async function loadBroadcastJobs() {
+    const list = document.getElementById('broadcast-job-list');
+    try {
+      const response = await fetch('/api/broadcast/jobs?limit=20');
+      const data = await parseApiResponse(response);
+      const jobs = data.jobs || [];
+      if (!jobs.length) {
+        list.innerHTML = '<div class="api-empty">Belum ada pesan siaran.</div>';
+        return;
+      }
+      const labels = {
+        queued: 'MENGANTRE', running: 'MENGIRIM', completed: 'SELESAI',
+        partial: 'SEBAGIAN', failed: 'GAGAL',
+      };
+      list.innerHTML = jobs.map(job => {
+        const total = Math.max(1, Number(job.total || 0));
+        const progress = Math.min(100, Math.round((Number(job.processed || 0) / total) * 100));
+        const date = job.createdAt ? new Date(job.createdAt).toLocaleString('id-ID') : '-';
+        return `
+          <article class="broadcast-job">
+            <div class="broadcast-job-head">
+              <span class="broadcast-job-time">${escapeHtml(date)}</span>
+              <span class="job-status ${escapeHtml(job.status)}">${labels[job.status] || escapeHtml(job.status)}</span>
+            </div>
+            <div class="broadcast-job-message">${escapeHtml(job.message)}</div>
+            <div class="job-progress"><span style="width:${progress}%"></span></div>
+            <div class="job-summary">
+              <span>${Number(job.processed || 0)}/${Number(job.total || 0)} diproses</span>
+              <span style="color:var(--success)">✅ ${Number(job.succeeded || 0)}</span>
+              <span style="color:var(--danger)">❌ ${Number(job.failed || 0)}</span>
+            </div>
+          </article>
+        `;
+      }).join('');
+    } catch (error) {
+      list.innerHTML = `<div class="api-empty">❌ ${escapeHtml(error.message)}</div>`;
+    }
+  }
+
   function showPage(page) {
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.querySelectorAll('.nav-item,.mobile-nav-item').forEach(n=>n.classList.remove('active'));
     document.getElementById('page-'+page).classList.add('active');
     document.querySelectorAll(`[data-nav-page="${page}"]`).forEach(n=>n.classList.add('active'));
+    if (broadcastPollTimer) clearInterval(broadcastPollTimer);
+    broadcastPollTimer = null;
     if (page === 'api-keys') loadApiKeys();
+    if (page === 'broadcast') {
+      loadBroadcastPage();
+      broadcastPollTimer = setInterval(loadBroadcastJobs, 2500);
+    }
   }
 
   // ── Toast ─────────────────────────────────────────────────

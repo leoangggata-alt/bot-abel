@@ -19,6 +19,11 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { handleMessage, handleGroupUpdate } from "./src/handler.js";
 import { getApiKeyCandidates } from "./src/api-key-store.js";
+import {
+  processNextBroadcastJob,
+  syncParticipatingGroups,
+} from "./src/broadcast.js";
+import { markGroupDirectoryDisconnected } from "./src/broadcast-store.js";
 
 dotenv.config();
 
@@ -37,6 +42,9 @@ let reconnectTimer = null;
 let reconnectAttempt = 0;
 let lastPairingRequestAt = 0;
 let shuttingDown = false;
+let broadcastPollTimer = null;
+let groupSyncTimer = null;
+let broadcastWorkerBusy = false;
 const recentMessageIds = new Set();
 const recentMessageOrder = [];
 
@@ -66,8 +74,45 @@ function scheduleReconnect() {
   }, delay);
 }
 
+function stopBroadcastServices() {
+  if (broadcastPollTimer) clearInterval(broadcastPollTimer);
+  if (groupSyncTimer) clearInterval(groupSyncTimer);
+  broadcastPollTimer = null;
+  groupSyncTimer = null;
+}
+
+async function runBroadcastWorker(sock) {
+  if (broadcastWorkerBusy || activeSocket !== sock || shuttingDown) return;
+  broadcastWorkerBusy = true;
+  try {
+    await processNextBroadcastJob(sock);
+  } catch (error) {
+    console.error(`[Broadcast Grup] Pekerja gagal: ${error.message}`);
+  } finally {
+    broadcastWorkerBusy = false;
+  }
+}
+
+function startBroadcastServices(sock) {
+  stopBroadcastServices();
+  syncParticipatingGroups(sock)
+    .then(directory => console.log(`[Broadcast Grup] ${directory.groups.length} grup tersedia di panel`))
+    .catch(error => console.error(`[Broadcast Grup] Gagal memuat grup: ${error.message}`));
+
+  broadcastPollTimer = setInterval(() => runBroadcastWorker(sock), 2000);
+  groupSyncTimer = setInterval(() => {
+    if (activeSocket !== sock || shuttingDown) return;
+    syncParticipatingGroups(sock).catch(error => {
+      console.error(`[Broadcast Grup] Gagal memperbarui grup: ${error.message}`);
+    });
+  }, 60000);
+  broadcastPollTimer.unref?.();
+  groupSyncTimer.unref?.();
+}
+
 // ── Fungsi utama ─────────────────────────────────────────────
 async function connectToWhatsApp() {
+  markGroupDirectoryDisconnected();
   const { state, saveCreds } = await useMultiFileAuthState("./session");
   const { version } = await fetchLatestBaileysVersion();
 
@@ -143,7 +188,11 @@ async function connectToWhatsApp() {
       console.warn(`[KONEKSI] tertutup | status=${statusCode}`);
 
       if (shouldReconnect) {
-        if (activeSocket === sock) activeSocket = null;
+        if (activeSocket === sock) {
+          activeSocket = null;
+          stopBroadcastServices();
+          markGroupDirectoryDisconnected();
+        }
         scheduleReconnect();
       } else {
         console.log("🚪 Logged out. Hapus folder 'session' lalu restart.");
@@ -164,6 +213,7 @@ async function connectToWhatsApp() {
       const openaiKeys = getApiKeyCandidates("openai").length;
       const groqKeys = getApiKeyCandidates("groq").length;
       const geminiKeys = getApiKeyCandidates("gemini").length;
+      startBroadcastServices(sock);
       console.log(`🤖 AI utama (OpenAI): ${openaiKeys ? `✅ ${openaiKeys} key aktif` : "❌ Belum diset"}`);
       console.log(`🧠 AI cadangan (Groq): ${groqKeys ? `✅ ${groqKeys} key aktif` : "❌ Belum diset"}`);
       console.log(`💠 AI cadangan (Gemini): ${geminiKeys ? `✅ ${geminiKeys} key aktif` : "❌ Belum diset"}`);
@@ -241,6 +291,8 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   if (reconnectTimer) clearTimeout(reconnectTimer);
+  stopBroadcastServices();
+  markGroupDirectoryDisconnected();
   console.log(`\nMenerima ${signal}; menutup koneksi WhatsApp...`);
   try {
     activeSocket?.end(new Error(`Shutdown ${signal}`));

@@ -11,6 +11,8 @@ data/products.json
 data/api-keys.json
 data/ai-settings.json
 data/.api-key-secret
+data/group-cache.json
+data/broadcast-jobs/
 qrcode.png
 bot-runtime.tar.gz
 

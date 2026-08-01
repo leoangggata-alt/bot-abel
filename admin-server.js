@@ -17,6 +17,13 @@ import {
 } from "./src/api-key-store.js";
 import { getAISettings, updateAISettings } from "./src/ai-settings.js";
 import { testProvider } from "./src/provider-test.js";
+import {
+  countActiveBroadcastJobs,
+  createBroadcastJob,
+  getGroupDirectory,
+  listBroadcastJobs,
+  MAX_ACTIVE_BROADCASTS,
+} from "./src/broadcast-store.js";
 
 dotenv.config();
 
@@ -241,6 +248,30 @@ app.put("/api/orders/:noOrder", (req, res) => {
 });
 
 // ── API Stats ─────────────────────────────────────────────────
+// API antrean pesan siaran. Bot mengambil job ini melalui pekerja lokal.
+app.get("/api/broadcast/groups", (req, res) => {
+  res.json(getGroupDirectory());
+});
+
+app.get("/api/broadcast/jobs", (req, res) => {
+  res.json({ jobs: listBroadcastJobs(req.query.limit) });
+});
+
+app.post("/api/broadcast/jobs", (req, res) => {
+  try {
+    if (countActiveBroadcastJobs() >= MAX_ACTIVE_BROADCASTS) {
+      return res.status(429).json({
+        error: `Maksimal ${MAX_ACTIVE_BROADCASTS} siaran boleh mengantre. Tunggu siaran sebelumnya selesai.`,
+      });
+    }
+    const directory = getGroupDirectory();
+    const job = createBroadcastJob(req.body, directory.groups);
+    return res.status(202).json({ success: true, job });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
 app.get("/api/stats", (req, res) => {
   const products = readProducts();
   const orders = readOrders();
