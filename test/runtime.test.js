@@ -300,6 +300,7 @@ test("prompt gambar otomatis ditingkatkan untuk hasil realistis", () => {
   assert.doesNotMatch(styled, /premium photorealistic image/i);
 
   assert.equal(normalizeImageRequest("risot mewah di Bali"), "resort mewah di Bali");
+  assert.equal(normalizeImageRequest("poto wanita duduk di pantai"), "foto wanita duduk di pantai");
   assert.equal(
     normalizeImageRequest("buat sebuah temoat risort yang sangat asestic"),
     "buat sebuah tempat resort yang sangat aesthetic"
@@ -308,7 +309,8 @@ test("prompt gambar otomatis ditingkatkan untuk hasil realistis", () => {
   assert.match(resort, /USER REQUEST — AUTHORITATIVE:\nresort tropis/i);
   assert.match(resort, /photorealistic architectural photography/i);
   assert.doesNotMatch(resort, /natural skin texture|lifelike anatomy/i);
-  assert.match(resort, /Do not replace it with an unrelated subject/i);
+  assert.match(resort, /Follow the complete user request literally/i);
+  assert.match(resort, /subject count, identity, pose, action, location/i);
 });
 
 test("gambar langsung, gambar kutipan, dan konteks reply dikenali", () => {

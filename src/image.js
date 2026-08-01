@@ -89,6 +89,7 @@ const ARCHITECTURE_PATTERN = /\b(?:resort|hotel|villa|vila|rumah|gedung|bangunan
 export function normalizeImageRequest(prompt) {
   return String(prompt || "")
     .trim()
+    .replace(/\bpoto\b/gi, "foto")
     .replace(/\btemoat\b/gi, "tempat")
     .replace(/\b(?:risot|resot|risort)\b/gi, "resort")
     .replace(/\b(?:asestic|aestetic|estetic)\b/gi, "aesthetic")
@@ -115,7 +116,7 @@ export function buildRealisticImagePrompt(prompt) {
     ? "Compose it as a high-converting affiliate product creative: make the main product immediately clear, use a clean premium setting, strong visual hierarchy, and useful negative space for optional marketing copy."
     : "Use a balanced composition, natural depth, and a believable environment.";
 
-  return `USER REQUEST — AUTHORITATIVE:\n${base}\n\nSUBJECT LOCK:\nRender the user's requested subject exactly as the dominant subject. Do not replace it with an unrelated subject. Add only environmental elements that are necessary to support the requested scene.\n\nQUALITY DIRECTION:\n${qualityDirection}\n${commercialDirection}\nPreserve every explicit subject, color, brand, camera, layout, and aspect-ratio instruction from the user. Do not add logos, watermarks, random letters, deformed hands, duplicated objects, or unreadable text. Only render text when the user explicitly requests exact wording.`;
+  return `USER REQUEST — AUTHORITATIVE:\n${base}\n\nHARD CONSTRAINTS:\n- Follow the complete user request literally. Every explicitly requested subject, subject count, identity, pose, action, location, object, color, camera angle, layout, text, and aspect ratio is mandatory.\n- The requested main subject must remain the dominant subject. Never replace it with an unrelated subject.\n- When a detail is unspecified, choose a neutral supporting detail that does not change the requested concept.\n- Add only environmental elements necessary to support the requested scene.\n\nQUALITY DIRECTION:\n${qualityDirection}\n${commercialDirection}\nDo not add logos, watermarks, random letters, deformed hands, duplicated objects, or unreadable text. Only render text when the user explicitly requests exact wording.`;
 }
 
 function imageAspectRatio(prompt, options = {}) {
@@ -364,8 +365,13 @@ async function generateWithProvider(provider, prompt, settings, options) {
 export async function generateImage(prompt, options = {}) {
   const settings = getAISettings();
   const enhancedPrompt = buildRealisticImagePrompt(prompt);
+  const allowFreeFallback = options.allowFreeFallback === true ||
+    String(process.env.ALLOW_FREE_IMAGE_FALLBACK || "false").toLowerCase() === "true";
+  const providerOrder = settings.imageOrder.filter(
+    provider => provider !== "pollinations" || allowFreeFallback
+  );
   let lastError;
-  for (const provider of settings.imageOrder) {
+  for (const provider of providerOrder) {
     try {
       console.log(`[IMG] Mencoba ${provider}: "${prompt.slice(0, 60)}"`);
       return await generateWithProvider(provider, enhancedPrompt, settings, options);
@@ -374,7 +380,20 @@ export async function generateImage(prompt, options = {}) {
       console.warn(`[IMG] Beralih dari ${provider}: ${error.message}`);
     }
   }
+  if (!allowFreeFallback && settings.imageOrder.includes("pollinations")) {
+    const error = lastError || new Error("Semua provider gambar premium gagal");
+    error.freeFallbackDisabled = true;
+    throw error;
+  }
   throw lastError || new Error("Semua provider gambar gagal");
+}
+
+function imageFailureMessage(error) {
+  const message = String(error?.message || "Generator gambar tidak tersedia");
+  if (error?.freeFallbackDisabled || /quota|billing|credit|hard limit|API key aktif/i.test(message)) {
+    return "Mesin gambar berkualitas sedang tidak memiliki kuota aktif. Gambar gratis sengaja tidak dikirim karena hasilnya sering meleset dari prompt. Tambahkan key Gemini yang memiliki kuota Nano Banana di panel admin, lalu coba lagi.";
+  }
+  return `${message}\n\nPeriksa tombol Tes Koneksi di panel admin atau coba lagi.`;
 }
 
 export async function kirimGambar(sock, to, prompt, caption = "") {
@@ -395,7 +414,7 @@ export async function kirimGambar(sock, to, prompt, caption = "") {
   } catch (error) {
     console.error("[IMG Error]", error.message);
     await sock.sendMessage(to, {
-      text: `❌ Gambar belum berhasil dibuat.\n${error.message}\n\nPeriksa tombol Tes Koneksi di panel admin atau coba lagi.`,
+      text: `❌ Gambar belum berhasil dibuat.\n${imageFailureMessage(error)}`,
     });
     return false;
   }
