@@ -1,7 +1,3 @@
-// ============================================================
-//  index.js - Entry point Bot WhatsApp Baileys
-// ============================================================
-
 import {
   makeWASocket,
   DisconnectReason,
@@ -24,54 +20,56 @@ import {
   syncParticipatingGroups,
 } from "./src/broadcast.js";
 import { markGroupDirectoryDisconnected } from "./src/broadcast-store.js";
+import {
+  consumeBotControlRequests,
+  getBotProfile,
+  getBotProfiles,
+  updateBotStatus,
+} from "./src/bot-profile-store.js";
 
 dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const QR_IMAGE_PATH = join(__dirname, "qrcode.png");
-const botPrefix =
-  process.env.BOT_PREFIX ||
-  (process.env.PREFIX?.length <= 3 ? process.env.PREFIX : "!");
-
-// Logger minimal
 const logger = pino({ level: "silent" });
-const pairingNumber = (process.env.PAIRING_NUMBER || "").replace(/\D/g, "");
-
-let activeSocket = null;
-let reconnectTimer = null;
-let reconnectAttempt = 0;
-let lastPairingRequestAt = 0;
+const botPrefix = process.env.BOT_PREFIX ||
+  (process.env.PREFIX?.length <= 3 ? process.env.PREFIX : "!");
+const baileysVersionPromise = fetchLatestBaileysVersion();
+const runtimes = new Map();
 let shuttingDown = false;
 let broadcastPollTimer = null;
 let groupSyncTimer = null;
 let broadcastWorkerBusy = false;
-const recentMessageIds = new Set();
-const recentMessageOrder = [];
+let botControlTimer = null;
 
-function isDuplicateMessage(id) {
-  if (!id) return false;
-  if (recentMessageIds.has(id)) return true;
-
-  recentMessageIds.add(id);
-  recentMessageOrder.push(id);
-  if (recentMessageOrder.length > 1000) {
-    recentMessageIds.delete(recentMessageOrder.shift());
-  }
-  return false;
+function createRuntime(profileId) {
+  const runtime = {
+    profileId,
+    socket: null,
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    lastPairingRequestAt: 0,
+    connecting: false,
+    generation: 0,
+    recentMessageIds: new Set(),
+    recentMessageOrder: [],
+  };
+  runtimes.set(profileId, runtime);
+  return runtime;
 }
 
-function scheduleReconnect() {
-  if (shuttingDown || reconnectTimer) return;
-  const delay = Math.min(30000, 2000 * 2 ** reconnectAttempt);
-  reconnectAttempt += 1;
-  console.log(`🔄 Menghubungkan ulang dalam ${Math.ceil(delay / 1000)} detik...`);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectToWhatsApp().catch((err) => {
-      console.error("❌ Gagal reconnect:", err.message);
-      scheduleReconnect();
-    });
-  }, delay);
+function getRuntime(profileId) {
+  return runtimes.get(profileId) || createRuntime(profileId);
+}
+
+function isDuplicateMessage(runtime, id) {
+  if (!id) return false;
+  if (runtime.recentMessageIds.has(id)) return true;
+  runtime.recentMessageIds.add(id);
+  runtime.recentMessageOrder.push(id);
+  if (runtime.recentMessageOrder.length > 1000) {
+    runtime.recentMessageIds.delete(runtime.recentMessageOrder.shift());
+  }
+  return false;
 }
 
 function stopBroadcastServices() {
@@ -82,7 +80,9 @@ function stopBroadcastServices() {
 }
 
 async function runBroadcastWorker(sock) {
-  if (broadcastWorkerBusy || activeSocket !== sock || shuttingDown) return;
+  if (broadcastWorkerBusy || shuttingDown) return;
+  const abelRuntime = runtimes.get("abel");
+  if (abelRuntime?.socket !== sock) return;
   broadcastWorkerBusy = true;
   try {
     await processNextBroadcastJob(sock);
@@ -98,10 +98,10 @@ function startBroadcastServices(sock) {
   syncParticipatingGroups(sock)
     .then(directory => console.log(`[Broadcast Grup] ${directory.groups.length} grup tersedia di panel`))
     .catch(error => console.error(`[Broadcast Grup] Gagal memuat grup: ${error.message}`));
-
   broadcastPollTimer = setInterval(() => runBroadcastWorker(sock), 2000);
   groupSyncTimer = setInterval(() => {
-    if (activeSocket !== sock || shuttingDown) return;
+    const abelRuntime = runtimes.get("abel");
+    if (abelRuntime?.socket !== sock || shuttingDown) return;
     syncParticipatingGroups(sock).catch(error => {
       console.error(`[Broadcast Grup] Gagal memperbarui grup: ${error.message}`);
     });
@@ -110,194 +110,296 @@ function startBroadcastServices(sock) {
   groupSyncTimer.unref?.();
 }
 
-// ── Fungsi utama ─────────────────────────────────────────────
-async function connectToWhatsApp() {
-  markGroupDirectoryDisconnected();
-  const { state, saveCreds } = await useMultiFileAuthState("./session");
-  const { version } = await fetchLatestBaileysVersion();
-
-  console.log("╔══════════════════════════════════════╗");
-  console.log("║   🤖 Bot Abel Asisten Tercantik       ║");
-  console.log(`║   Nama: ${(process.env.BUSINESS_NAME || "Abel").padEnd(28)}║`);
-  console.log("╚══════════════════════════════════════╝");
-  console.log(`\n📦 Versi Baileys: ${version.join(".")}`);
-  console.log("⏳ Menghubungkan ke WhatsApp...\n");
-
-  const sock = makeWASocket({
-    version,
-    logger,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
-    },
-    printQRInTerminal: false,
-    syncFullHistory: false,
-    generateHighQualityLinkPreview: false,
-    getMessage: async () => ({ conversation: "" }), // ← fix pesan lama
-    browser: ["Abel Bot", "Chrome", "120.0.0"],
+function scheduleReconnect(runtime) {
+  if (shuttingDown || runtime.reconnectTimer) return;
+  const profile = getBotProfile(runtime.profileId);
+  if (!profile?.enabled) return;
+  const delayMs = Math.min(30000, 2000 * 2 ** runtime.reconnectAttempt);
+  runtime.reconnectAttempt += 1;
+  updateBotStatus(runtime.profileId, {
+    state: "reconnecting",
+    connected: false,
+    message: `Menghubungkan ulang dalam ${Math.ceil(delayMs / 1000)} detik`,
   });
-  activeSocket = sock;
+  runtime.reconnectTimer = setTimeout(() => {
+    runtime.reconnectTimer = null;
+    connectBot(runtime.profileId).catch(error => {
+      console.error(`[${profile.name}] Gagal reconnect: ${error.message}`);
+      scheduleReconnect(runtime);
+    });
+  }, delayMs);
+}
 
-  // Pairing code memudahkan login bila WhatsApp dan Termux ada di HP yang sama.
-  if (
-    !state.creds.registered &&
-    pairingNumber &&
-    Date.now() - lastPairingRequestAt > 60000
-  ) {
-    lastPairingRequestAt = Date.now();
-    setTimeout(async () => {
-      try {
-        const code = await sock.requestPairingCode(pairingNumber);
-        const readableCode = code?.match(/.{1,4}/g)?.join("-") || code;
-        console.log("\n========================================");
-        console.log(`KODE PAIRING WHATSAPP: ${readableCode}`);
-        console.log("WhatsApp > Perangkat tertaut > Tautkan dengan nomor telepon");
-        console.log("========================================\n");
-      } catch (error) {
-        console.error("Gagal meminta pairing code:", error.message);
-      }
-    }, 2000);
+async function restartBot(profileId) {
+  const runtime = getRuntime(profileId);
+  runtime.generation += 1;
+  if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+  runtime.reconnectTimer = null;
+  runtime.reconnectAttempt = 0;
+  runtime.connecting = false;
+  const oldSocket = runtime.socket;
+  runtime.socket = null;
+  if (profileId === "abel") {
+    stopBroadcastServices();
+    markGroupDirectoryDisconnected();
+  }
+  try {
+    oldSocket?.end(new Error(`Restart ${profileId} dari panel`));
+  } catch {
+    // Socket lama boleh sudah tertutup.
   }
 
-  // ── QR Code ──────────────────────────────────────────────
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+  const profile = getBotProfile(profileId);
+  if (!profile?.enabled) {
+    updateBotStatus(profileId, {
+      state: "disabled",
+      connected: false,
+      pairingCode: "",
+      message: `${profile?.name || profileId} dinonaktifkan dari panel`,
+    });
+    return;
+  }
+  await connectBot(profileId);
+}
 
-    if (qr) {
-      console.log("\n📱 SCAN QR CODE DENGAN WHATSAPP KAMU:\n");
-      qrcode.generate(qr, { small: true });
-
+function startBotControlService() {
+  if (botControlTimer) clearInterval(botControlTimer);
+  botControlTimer = setInterval(async () => {
+    const requests = consumeBotControlRequests();
+    const profileIds = [...new Set(
+      requests.filter(item => item.action === "restart").map(item => item.id),
+    )];
+    for (const profileId of profileIds) {
       try {
-        await QRCode.toFile(QR_IMAGE_PATH, qr, {
+        await restartBot(profileId);
+      } catch (error) {
+        console.error(`[${profileId}] Restart dari panel gagal: ${error.message}`);
+      }
+    }
+  }, 2000);
+  botControlTimer.unref?.();
+}
+
+async function requestPairingCode(sock, runtime, profile, registered) {
+  const number = profile.id === "abel"
+    ? profile.pairingNumber || String(process.env.PAIRING_NUMBER || "").replace(/\D/g, "")
+    : profile.pairingNumber;
+  if (registered || !number || Date.now() - runtime.lastPairingRequestAt <= 60000) return;
+  runtime.lastPairingRequestAt = Date.now();
+  setTimeout(async () => {
+    try {
+      const code = await sock.requestPairingCode(number);
+      const readableCode = code?.match(/.{1,4}/g)?.join("-") || code;
+      updateBotStatus(profile.id, {
+        state: "waiting_pairing",
+        connected: false,
+        pairingCode: readableCode,
+        message: `Masukkan kode pairing untuk ${profile.name}`,
+      });
+      console.log(`\n[${profile.name}] KODE PAIRING: ${readableCode}`);
+      console.log("WhatsApp > Perangkat tertaut > Tautkan dengan nomor telepon\n");
+    } catch (error) {
+      updateBotStatus(profile.id, {
+        state: "pairing_error",
+        connected: false,
+        message: error.message,
+      });
+      console.error(`[${profile.name}] Gagal meminta pairing code: ${error.message}`);
+    }
+  }, 2000);
+}
+
+async function connectBot(profileId) {
+  const profile = getBotProfile(profileId);
+  const runtime = getRuntime(profileId);
+  if (!profile?.enabled || shuttingDown || runtime.connecting) return null;
+
+  runtime.connecting = true;
+  runtime.generation += 1;
+  const generation = runtime.generation;
+  updateBotStatus(profileId, {
+    state: "connecting",
+    connected: false,
+    pairingCode: "",
+    message: `Menghubungkan ${profile.name} ke WhatsApp`,
+  });
+
+  try {
+    const sessionDirectory = profileId === "abel" ? "./session" : `./session-${profileId}`;
+    const qrImagePath = join(__dirname, profileId === "abel" ? "qrcode.png" : `qrcode-${profileId}.png`);
+    const { state, saveCreds } = await useMultiFileAuthState(sessionDirectory);
+    const { version } = await baileysVersionPromise;
+    const sock = makeWASocket({
+      version,
+      logger,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
+      printQRInTerminal: false,
+      syncFullHistory: false,
+      generateHighQualityLinkPreview: false,
+      getMessage: async () => ({ conversation: "" }),
+      browser: [`${profile.name} by ABEL-LAB`, "Chrome", "120.0.0"],
+    });
+    runtime.socket = sock;
+    runtime.connecting = false;
+
+    console.log(`[${profile.name}] Baileys ${version.join(".")} — menghubungkan...`);
+    requestPairingCode(sock, runtime, profile, state.creds.registered);
+
+    sock.ev.on("connection.update", async update => {
+      if (runtime.generation !== generation) return;
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        console.log(`[${profile.name}] QR tersedia untuk dipindai`);
+        qrcode.generate(qr, { small: true });
+        updateBotStatus(profileId, {
+          state: "waiting_qr",
+          connected: false,
+          qrAvailable: true,
+          message: `Pindai QR untuk menghubungkan ${profile.name}`,
+        });
+        QRCode.toFile(qrImagePath, qr, {
           color: { dark: "#000000", light: "#FFFFFF" },
           width: 400,
           margin: 2,
-        });
-        console.log(`\n✅ QR Code disimpan: ${QR_IMAGE_PATH}\n`);
-      } catch (e) {
-        console.error("Gagal simpan QR:", e.message);
+        }).catch(error => console.error(`[${profile.name}] Gagal menyimpan QR: ${error.message}`));
       }
-    }
 
-    if (connection === "close") {
-      const statusCode =
-        lastDisconnect?.error instanceof Boom
+      if (connection === "close") {
+        const statusCode = lastDisconnect?.error instanceof Boom
           ? lastDisconnect.error.output.statusCode
           : "unknown";
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.warn(`[KONEKSI] tertutup | status=${statusCode}`);
-
-      if (shouldReconnect) {
-        if (activeSocket === sock) {
-          activeSocket = null;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        runtime.socket = null;
+        if (profileId === "abel") {
           stopBroadcastServices();
           markGroupDirectoryDisconnected();
         }
-        scheduleReconnect();
-      } else {
-        console.log("🚪 Logged out. Hapus folder 'session' lalu restart.");
-        process.exit(10);
+        updateBotStatus(profileId, {
+          state: shouldReconnect ? "reconnecting" : "logged_out",
+          connected: false,
+          pairingCode: "",
+          message: shouldReconnect
+            ? `Koneksi terputus (${statusCode}), mencoba kembali`
+            : "Sesi keluar; tautkan ulang dari panel",
+        });
+        console.warn(`[${profile.name}] Koneksi tertutup | status=${statusCode}`);
+        if (shouldReconnect) scheduleReconnect(runtime);
       }
-    }
 
-    if (connection === "open") {
-      reconnectAttempt = 0;
-      const num = sock.user?.id?.split(":")[0];
-      console.log("\n╔══════════════════════════════════════╗");
-      console.log("║  ✅ BOT BERHASIL TERHUBUNG! 💖        ║");
-      console.log(`║  📞 Nomor: ${(num || "").padEnd(26)}║`);
-      console.log(`║  💅 Nama : ${(process.env.BUSINESS_NAME || "Abel").padEnd(26)}║`);
-      console.log("╚══════════════════════════════════════╝");
-      console.log("\n🟢 Abel siap menerima pesan!");
-      console.log(`📌 Prefix: ${botPrefix}`);
-      const openaiKeys = getApiKeyCandidates("openai").length;
-      const groqKeys = getApiKeyCandidates("groq").length;
-      const geminiKeys = getApiKeyCandidates("gemini").length;
-      startBroadcastServices(sock);
-      console.log(`🤖 AI utama (OpenAI): ${openaiKeys ? `✅ ${openaiKeys} key aktif` : "❌ Belum diset"}`);
-      console.log(`🧠 AI cadangan (Groq): ${groqKeys ? `✅ ${groqKeys} key aktif` : "❌ Belum diset"}`);
-      console.log(`💠 AI cadangan (Gemini): ${geminiKeys ? `✅ ${geminiKeys} key aktif` : "❌ Belum diset"}`);
-      console.log("⏹️  Ctrl+C untuk stop\n");
-    }
-  });
-
-  // ── Simpan credentials ────────────────────────────────────
-  sock.ev.on("creds.update", saveCreds);
-
-  // ── Terima pesan masuk ────────────────────────────────────
-  sock.ev.on("messages.upsert", async (upsert) => {
-    try {
-      const { messages, type } = upsert;
-
-      // Beberapa versi WhatsApp mengirim pesan live sebagai "append".
-      // Pesan append lama tetap dilewati agar history tidak dibalas ulang.
-      if (type !== "notify" && type !== "append") return;
-      console.log(`[UPSERT] type=${type} | jumlah=${messages.length}`);
-
-      for (const msg of messages) {
-        const messageTimeMs = Number(msg.messageTimestamp || 0) * 1000;
-        if (
-          type === "append" &&
-          messageTimeMs > 0 &&
-          Date.now() - messageTimeMs > 2 * 60 * 1000
-        ) {
-          continue;
-        }
-        if (isDuplicateMessage(msg.key.id)) {
-          console.log(`[SKIP] Pesan duplikat: ${msg.key.id}`);
-          continue;
-        }
-
-        // Skip status broadcast
-        if (msg.key.remoteJid === "status@broadcast") continue;
-
-        const normalizedContent = normalizeMessageContent(msg.message);
-        const normalizedMsg = normalizedContent
-          ? { ...msg, message: normalizedContent }
-          : msg;
-
-        // Log pesan masuk untuk debugging
-        const from = normalizedMsg.key.remoteJid;
-        const isGrup = from?.endsWith("@g.us");
-        const teks =
-          normalizedMsg.message?.conversation ||
-          normalizedMsg.message?.extendedTextMessage?.text ||
-          normalizedMsg.message?.imageMessage?.caption ||
-          "(non-text)";
-
-        console.log(`[MSG] ${isGrup ? "Grup" : "Personal"} | ${from} | "${teks}"`);
-
-        await handleMessage(sock, normalizedMsg);
+      if (connection === "open") {
+        runtime.reconnectAttempt = 0;
+        const number = sock.user?.id?.split(":")[0] || "";
+        updateBotStatus(profileId, {
+          state: "connected",
+          connected: true,
+          number,
+          pairingCode: "",
+          qrAvailable: false,
+          message: `${profile.name} aktif dan siap menerima pesan`,
+        });
+        console.log(`\n✅ ${profile.name.toUpperCase()} TERHUBUNG — ${number}`);
+        console.log(`📌 Grup: !${profile.command} [pesan]${profileId === "abel" ? " atau command ! biasa" : ""}`);
+        if (profileId === "abel") startBroadcastServices(sock);
+        const openaiKeys = getApiKeyCandidates("openai").length;
+        const geminiKeys = getApiKeyCandidates("gemini").length;
+        const groqKeys = getApiKeyCandidates("groq").length;
+        console.log(`[${profile.name}] API bersama — OpenAI ${openaiKeys}, Gemini ${geminiKeys}, Groq ${groqKeys}`);
       }
-    } catch (err) {
-      console.error("[Pesan Error]", err?.stack || err);
-    }
-  });
+    });
 
-  // ── Update anggota grup ───────────────────────────────────
-  sock.ev.on("group-participants.update", async (update) => {
-    try {
-      await handleGroupUpdate(sock, [update]);
-    } catch (err) {
-      console.error("[Group Error]", err.message);
-    }
-  });
+    sock.ev.on("creds.update", saveCreds);
 
-  return sock;
+    sock.ev.on("messages.upsert", async upsert => {
+      if (runtime.generation !== generation) return;
+      try {
+        const { messages, type } = upsert;
+        if (type !== "notify" && type !== "append") return;
+        for (const msg of messages) {
+          const messageTimeMs = Number(msg.messageTimestamp || 0) * 1000;
+          if (type === "append" && messageTimeMs > 0 && Date.now() - messageTimeMs > 120000) continue;
+          if (isDuplicateMessage(runtime, msg.key.id)) continue;
+          if (msg.key.remoteJid === "status@broadcast") continue;
+
+          const normalizedContent = normalizeMessageContent(msg.message);
+          const normalizedMsg = normalizedContent ? { ...msg, message: normalizedContent } : msg;
+          const from = normalizedMsg.key.remoteJid;
+          const text = normalizedMsg.message?.conversation ||
+            normalizedMsg.message?.extendedTextMessage?.text ||
+            normalizedMsg.message?.imageMessage?.caption || "(non-text)";
+          console.log(`[${profile.name}] ${from?.endsWith("@g.us") ? "Grup" : "Personal"} | ${from} | "${text}"`);
+          await handleMessage(sock, normalizedMsg, getBotProfile(profileId) || profile);
+        }
+      } catch (error) {
+        console.error(`[${profile.name}] Pesan gagal:`, error?.stack || error);
+      }
+    });
+
+    if (profileId === "abel") {
+      sock.ev.on("group-participants.update", async update => {
+        try {
+          await handleGroupUpdate(sock, [update]);
+        } catch (error) {
+          console.error(`[${profile.name}] Update grup gagal: ${error.message}`);
+        }
+      });
+    }
+
+    return sock;
+  } catch (error) {
+    runtime.connecting = false;
+    updateBotStatus(profileId, {
+      state: "error",
+      connected: false,
+      message: error.message,
+    });
+    throw error;
+  }
 }
 
-// ── Start ─────────────────────────────────────────────────────
+async function startAllBots() {
+  const profiles = getBotProfiles();
+  for (const profile of Object.values(profiles)) {
+    if (!profile.enabled) {
+      updateBotStatus(profile.id, {
+        state: "disabled",
+        connected: false,
+        message: `${profile.name} dinonaktifkan dari panel`,
+      });
+      continue;
+    }
+    connectBot(profile.id).catch(error => {
+      console.error(`[${profile.name}] Gagal memulai: ${error.message}`);
+      scheduleReconnect(getRuntime(profile.id));
+    });
+  }
+  startBotControlService();
+}
+
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
   stopBroadcastServices();
+  if (botControlTimer) clearInterval(botControlTimer);
+  botControlTimer = null;
   markGroupDirectoryDisconnected();
-  console.log(`\nMenerima ${signal}; menutup koneksi WhatsApp...`);
-  try {
-    activeSocket?.end(new Error(`Shutdown ${signal}`));
-  } catch {
-    // Socket mungkin sudah tertutup.
+  for (const runtime of runtimes.values()) {
+    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+    runtime.generation += 1;
+    try {
+      runtime.socket?.end(new Error(`Shutdown ${signal}`));
+    } catch {
+      // Socket mungkin sudah tertutup.
+    }
+    updateBotStatus(runtime.profileId, {
+      state: "offline",
+      connected: false,
+      pairingCode: "",
+      message: `Bot dihentikan (${signal})`,
+    });
   }
   setTimeout(() => process.exit(0), 1000).unref();
 }
@@ -305,7 +407,7 @@ async function shutdown(signal) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-connectToWhatsApp().catch((err) => {
-  console.error("❌ Fatal Error:", err.message);
-  scheduleReconnect();
+startAllBots().catch(error => {
+  console.error("Gagal memulai bot:", error.message);
+  process.exitCode = 1;
 });

@@ -2,6 +2,7 @@
 node_modules/
 session/
 session-loggedout-*/
+session-arka/
 .env
 logs/
 .pm2-local/
@@ -13,7 +14,11 @@ data/ai-settings.json
 data/.api-key-secret
 data/group-cache.json
 data/broadcast-jobs/
+data/bot-profiles.json
+data/bot-status.json
+data/bot-control.json
 qrcode.png
+qrcode-arka.png
 bot-runtime.tar.gz
 
 # Upload data awal dan aset saja

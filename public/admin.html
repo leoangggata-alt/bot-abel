@@ -371,6 +371,37 @@
     .job-progress span { display: block; height: 100%; background: linear-gradient(90deg,var(--primary),var(--accent)); border-radius: inherit; }
     .job-summary { display: flex; gap: 12px; margin-top: 8px; color: var(--text-muted); font-size: 10px; }
 
+    /* Duo Bot */
+    .duo-banner { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; margin-bottom: 20px; border-radius: var(--radius); border: 1px solid rgba(124,58,237,.38); background: linear-gradient(135deg,rgba(236,72,153,.12),rgba(6,182,212,.12)); }
+    .duo-banner-title { font-size: 16px; font-weight: 800; }
+    .duo-banner-note { margin-top: 5px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+    .shared-api-badge { white-space: nowrap; border-radius: 999px; padding: 7px 12px; font-size: 10px; font-weight: 800; color: #c4b5fd; background: rgba(124,58,237,.18); border: 1px solid rgba(167,139,250,.3); }
+    .duo-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; align-items: start; }
+    .bot-profile-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .bot-profile-head { display: flex; align-items: center; gap: 13px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+    .bot-avatar { width: 50px; height: 50px; display: grid; place-items: center; border-radius: 15px; font-size: 25px; flex-shrink: 0; }
+    .bot-avatar.abel { background: linear-gradient(135deg,rgba(236,72,153,.32),rgba(139,92,246,.25)); border: 1px solid rgba(244,114,182,.38); }
+    .bot-avatar.arka { background: linear-gradient(135deg,rgba(6,182,212,.3),rgba(59,130,246,.25)); border: 1px solid rgba(34,211,238,.36); }
+    .bot-profile-title { font-size: 17px; font-weight: 800; }
+    .bot-profile-role { color: var(--text-muted); font-size: 10px; line-height: 1.4; margin-top: 3px; }
+    .bot-live-status { margin-left: auto; text-align: right; }
+    .bot-state { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 8px; font-size: 9px; font-weight: 800; background: rgba(148,163,184,.12); color: var(--text-muted); }
+    .bot-state.connected { color: #6ee7b7; background: rgba(16,185,129,.14); }
+    .bot-state.waiting_pairing, .bot-state.waiting_qr, .bot-state.connecting, .bot-state.reconnecting { color: #fcd34d; background: rgba(245,158,11,.14); }
+    .bot-state.error, .bot-state.pairing_error, .bot-state.logged_out { color: #fca5a5; background: rgba(239,68,68,.14); }
+    .bot-number { color: var(--text-muted); font-size: 9px; margin-top: 5px; }
+    .bot-profile-body { padding: 18px 20px; }
+    .bot-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .bot-form-grid .full { grid-column: 1 / -1; }
+    .bot-command-box { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--primary-light); font-family: ui-monospace,monospace; font-size: 12px; }
+    .pairing-box { margin-top: 15px; padding: 14px; border: 1px solid rgba(245,158,11,.3); border-radius: 10px; background: rgba(245,158,11,.08); }
+    .pairing-label { color: #fcd34d; font-size: 10px; font-weight: 800; letter-spacing: .8px; }
+    .pairing-code { margin: 8px 0; color: white; font-family: ui-monospace,monospace; font-size: 21px; font-weight: 800; letter-spacing: 2px; user-select: all; }
+    .bot-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+    .bot-enabled { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; text-transform: none; letter-spacing: normal; }
+    .bot-enabled input { width: auto; accent-color: var(--success); }
+    .duo-help { margin-top: 18px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-size: 12px; color: var(--text-muted); line-height: 1.8; }
+
     @media(max-width: 768px) {
       .sidebar { display: none; }
       .main { margin-left: 0; padding: 16px; width: 100%; min-width: 0; overflow-x: hidden; }
@@ -388,6 +419,10 @@
       .broadcast-target-options { grid-template-columns: 1fr; }
       .broadcast-actions { align-items: stretch; flex-direction: column; }
       .broadcast-actions .btn { justify-content: center; }
+      .duo-grid { grid-template-columns: 1fr; }
+      .duo-banner { align-items: flex-start; flex-direction: column; }
+      .bot-form-grid { grid-template-columns: 1fr; }
+      .bot-form-grid .full { grid-column: auto; }
     }
   </style>
 </head>
@@ -419,6 +454,9 @@
         <span class="icon">📣</span> Pesan Siaran
       </div>
       <div class="nav-label">Pengaturan</div>
+      <div class="nav-item" onclick="showPage('duo-bot')" id="nav-duo-bot" data-nav-page="duo-bot">
+        <span class="icon">💞</span> Duo Bot
+      </div>
       <div class="nav-item" onclick="showPage('settings')" id="nav-settings" data-nav-page="settings">
         <span class="icon">⚙️</span> Pengaturan Bot
       </div>
@@ -438,6 +476,7 @@
 
     <!-- Navigasi khusus layar HP -->
     <div class="mobile-nav">
+      <button class="mobile-nav-item" data-nav-page="duo-bot" onclick="showPage('duo-bot')">💞 Duo Bot</button>
       <button class="mobile-nav-item active" data-nav-page="dashboard" onclick="showPage('dashboard')">📊 Dashboard</button>
       <button class="mobile-nav-item" data-nav-page="products" onclick="showPage('products')">📦 Produk</button>
       <button class="mobile-nav-item" data-nav-page="orders" onclick="showPage('orders')">🛒 Pesanan</button>
@@ -622,6 +661,30 @@
       </div>
     </div>
 
+    <div class="page" id="page-duo-bot">
+      <div class="page-header">
+        <div class="page-title">💞 Abel & Arka</div>
+        <div class="page-sub">Dua akun WhatsApp, dua karakter dan memori terpisah dalam satu panel</div>
+      </div>
+      <div class="duo-banner">
+        <div>
+          <div class="duo-banner-title">Dua kepribadian, satu keluarga ABEL-LAB</div>
+          <div class="duo-banner-note">Abel fokus pada layanan, jualan, dan kreativitas. Arka fokus pada grup, analisis, dan bantuan teknis. Perubahan profil langsung memuat ulang bot terkait.</div>
+        </div>
+        <span class="shared-api-badge">🔑 1 POOL API BERSAMA</span>
+      </div>
+      <div class="duo-grid" id="bot-duo-grid">
+        <div class="api-empty">Memuat profil Abel dan Arka...</div>
+      </div>
+      <div class="duo-help">
+        <strong style="color:var(--text)">Cara memanggil di grup:</strong><br/>
+        <code>!abel [pesan]</code> khusus Abel &nbsp;•&nbsp;
+        <code>!arka [pesan]</code> khusus Arka &nbsp;•&nbsp;
+        <code>!duo [topik]</code> untuk meminta keduanya menjawab satu kali.<br/>
+        Command lama seperti <code>!harga</code>, <code>!order</code>, dan <code>!menu</code> tetap ditangani Abel agar tidak terjadi balasan ganda.
+      </div>
+    </div>
+
     <div class="page" id="page-settings">
       <div class="page-header">
         <div class="page-title">⚙️ Pengaturan Bot</div>
@@ -793,6 +856,8 @@
   let aiSettingsData = null;
   let broadcastGroups = [];
   let broadcastPollTimer = null;
+  let botDuoData = null;
+  let botStatusPollTimer = null;
   const providerTestResults = {};
   let editingId = null;
   let isAktif = true;
@@ -1305,6 +1370,160 @@
   }
 
   // ── Navigation ────────────────────────────────────────────
+  async function loadBotDuo() {
+    const grid = document.getElementById('bot-duo-grid');
+    try {
+      botDuoData = await fetch('/api/bots').then(parseApiResponse);
+      renderBotDuo();
+    } catch (error) {
+      grid.innerHTML = `<div class="api-empty">❌ ${escapeHtml(error.message)}</div>`;
+    }
+  }
+
+  function refreshBotDuoStatus() {
+    const grid = document.getElementById('bot-duo-grid');
+    const active = document.activeElement;
+    if (grid?.contains(active) && ['INPUT','TEXTAREA'].includes(active?.tagName)) return;
+    loadBotDuo();
+  }
+
+  function maskBotNumber(value='') {
+    const number = String(value || '');
+    if (number.length < 8) return number || 'belum terhubung';
+    return `${number.slice(0,4)}••••${number.slice(-4)}`;
+  }
+
+  function renderBotDuo() {
+    const grid = document.getElementById('bot-duo-grid');
+    const profiles = botDuoData?.profiles || {};
+    const statuses = botDuoData?.statuses || {};
+    const stateLabels = {
+      connected: '● TERHUBUNG', connecting: '● MENGHUBUNGKAN', reconnecting: '● MENYAMBUNG ULANG',
+      waiting_pairing: '● PERLU PAIRING', waiting_qr: '● PERLU SCAN QR', disabled: '● NONAKTIF',
+      logged_out: '● KELUAR', error: '● ERROR', pairing_error: '● PAIRING GAGAL', offline: '● OFFLINE',
+    };
+    grid.innerHTML = Object.entries(profiles).map(([id, profile]) => {
+      const status = statuses[id] || {};
+      const pairing = status.pairingCode ? `
+        <div class="pairing-box">
+          <div class="pairing-label">KODE PAIRING ${escapeHtml(profile.name.toUpperCase())}</div>
+          <div class="pairing-code">${escapeHtml(status.pairingCode)}</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.6">WhatsApp → Perangkat tertaut → Tautkan perangkat → Tautkan dengan nomor telepon.</div>
+          <button class="btn btn-edit btn-sm" style="margin-top:9px" onclick="copyBotPairing('${id}')">📋 Salin Kode</button>
+        </div>` : '';
+      const qr = status.qrAvailable ? `
+        <div class="pairing-box">
+          <div class="pairing-label">ATAU PINDAI QR</div>
+          <img src="/api/bots/${id}/qr?t=${Date.now()}" alt="QR ${escapeHtml(profile.name)}" style="display:block;width:min(100%,260px);margin:10px auto;border-radius:9px;background:white;padding:8px"/>
+        </div>` : '';
+      return `
+        <section class="bot-profile-card">
+          <div class="bot-profile-head">
+            <div class="bot-avatar ${id}">${id === 'abel' ? '👩🏻' : '👨🏻'}</div>
+            <div style="min-width:0">
+              <div class="bot-profile-title">${escapeHtml(profile.name)}</div>
+              <div class="bot-profile-role">${escapeHtml(profile.role)}</div>
+            </div>
+            <div class="bot-live-status">
+              <span class="bot-state ${escapeHtml(status.state || 'offline')}">${stateLabels[status.state] || '● OFFLINE'}</span>
+              <div class="bot-number">${escapeHtml(maskBotNumber(status.number || profile.pairingNumber))}</div>
+            </div>
+          </div>
+          <div class="bot-profile-body">
+            <div class="bot-form-grid">
+              <div class="form-group">
+                <label>Nama Bot</label>
+                <input id="bot-${id}-name" value="${escapeHtml(profile.name)}" maxlength="40"/>
+              </div>
+              <div class="form-group">
+                <label>Nomor WhatsApp</label>
+                <input id="bot-${id}-number" value="${escapeHtml(profile.pairingNumber)}" inputmode="numeric" placeholder="628xxxxxxxxxx"/>
+              </div>
+              <div class="form-group full">
+                <label>Perintah Grup</label>
+                <div class="bot-command-box">!${escapeHtml(profile.command)} [pesan]</div>
+              </div>
+              <div class="form-group">
+                <label>Memori Percakapan</label>
+                <input id="bot-${id}-memory" type="number" min="0" max="50" value="${Number(profile.memoryTurns)}"/>
+              </div>
+              <div class="form-group">
+                <label>Kreativitas (0–2)</label>
+                <input id="bot-${id}-temperature" type="number" min="0" max="2" step="0.05" value="${Number(profile.temperature)}"/>
+              </div>
+              <div class="form-group full">
+                <label>Karakter</label>
+                <textarea id="bot-${id}-personality" rows="4" maxlength="2000">${escapeHtml(profile.personality)}</textarea>
+              </div>
+              <div class="form-group full">
+                <label>Instruksi Otak Khusus</label>
+                <textarea id="bot-${id}-instruction" rows="4" maxlength="3000">${escapeHtml(profile.customInstruction)}</textarea>
+              </div>
+            </div>
+            ${pairing}${qr}
+            <div class="bot-card-actions">
+              <label class="bot-enabled"><input id="bot-${id}-enabled" type="checkbox" ${profile.enabled ? 'checked' : ''}/> Aktifkan ${escapeHtml(profile.name)}</label>
+              <div style="display:flex;gap:7px">
+                <button class="btn btn-edit btn-sm" onclick="restartBotProfile('${id}')">🔄 Hubungkan Ulang</button>
+                <button class="btn btn-primary btn-sm" onclick="saveBotProfile('${id}')">💾 Simpan</button>
+              </div>
+            </div>
+            <div style="margin-top:10px;font-size:10px;color:var(--text-muted)">${escapeHtml(status.message || 'Belum dijalankan')}</div>
+          </div>
+        </section>
+      `;
+    }).join('');
+  }
+
+  async function saveBotProfile(id) {
+    const name = document.getElementById(`bot-${id}-name`).value.trim();
+    const enabled = document.getElementById(`bot-${id}-enabled`).checked;
+    if (!name) return showToast('⚠️ Nama bot wajib diisi', 'error');
+    if (!confirm(`Simpan profil ${name} dan muat ulang koneksi bot ini?`)) return;
+    const data = {
+      name,
+      enabled,
+      pairingNumber: document.getElementById(`bot-${id}-number`).value,
+      memoryTurns: Number(document.getElementById(`bot-${id}-memory`).value),
+      temperature: Number(document.getElementById(`bot-${id}-temperature`).value),
+      personality: document.getElementById(`bot-${id}-personality`).value,
+      customInstruction: document.getElementById(`bot-${id}-instruction`).value,
+    };
+    try {
+      const response = await fetch(`/api/bots/${id}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data),
+      });
+      await parseApiResponse(response);
+      showToast(`✅ Profil ${name} disimpan; koneksi sedang dimuat ulang`);
+      await loadBotDuo();
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  }
+
+  async function restartBotProfile(id) {
+    const name = botDuoData?.profiles?.[id]?.name || id;
+    if (!confirm(`Hubungkan ulang ${name} sekarang?`)) return;
+    try {
+      const response = await fetch(`/api/bots/${id}/restart`, { method: 'POST' });
+      await parseApiResponse(response);
+      showToast(`🔄 ${name} sedang dihubungkan ulang`);
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
+    }
+  }
+
+  async function copyBotPairing(id) {
+    const code = botDuoData?.statuses?.[id]?.pairingCode;
+    if (!code) return showToast('⚠️ Kode pairing belum tersedia', 'error');
+    try {
+      await navigator.clipboard.writeText(code.replace(/-/g,''));
+      showToast('📋 Kode pairing disalin');
+    } catch {
+      showToast('❌ Browser tidak mengizinkan clipboard', 'error');
+    }
+  }
+
   async function loadBroadcastPage() {
     try {
       const response = await fetch('/api/broadcast/groups');
@@ -1448,7 +1667,13 @@
     document.querySelectorAll(`[data-nav-page="${page}"]`).forEach(n=>n.classList.add('active'));
     if (broadcastPollTimer) clearInterval(broadcastPollTimer);
     broadcastPollTimer = null;
+    if (botStatusPollTimer) clearInterval(botStatusPollTimer);
+    botStatusPollTimer = null;
     if (page === 'api-keys') loadApiKeys();
+    if (page === 'duo-bot') {
+      loadBotDuo();
+      botStatusPollTimer = setInterval(refreshBotDuoStatus, 3000);
+    }
     if (page === 'broadcast') {
       loadBroadcastPage();
       broadcastPollTimer = setInterval(loadBroadcastJobs, 2500);

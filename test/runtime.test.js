@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildCatalogContext,
+  buildSystemPrompt,
   chatAI,
   detectAIMode,
   isCreatorQuestion,
@@ -17,6 +18,7 @@ import {
   sendBroadcastToGroups,
 } from "../src/broadcast.js";
 import { normalizeBroadcastRequest } from "../src/broadcast-store.js";
+import { normalizePhoneNumber } from "../src/bot-profile-store.js";
 import { buildRealisticImagePrompt } from "../src/image.js";
 import {
   ambilPesanGambar,
@@ -28,6 +30,7 @@ import {
   gabungkanKonteksKutipan,
   handleMessage,
   isPerintahGrupBerprefix,
+  routeGroupCommandForBot,
   isPermintaanMemberGrup,
   isPermintaanPromptAffiliate,
   isPermintaanPromptUGC,
@@ -122,6 +125,79 @@ test("handler grup diam tanpa prefix dan merespons command bertanda seru", async
   await handleMessage(sock, { key: baseKey, message: { conversation: "!menu" } });
   assert.equal(sent.length, 1);
   assert.match(sent[0].content.text, /!menu - Tampilkan menu ini/i);
+});
+
+test("Abel dan Arka mempunyai jalur perintah grup yang tidak bertabrakan", () => {
+  const abel = { id: "abel", command: "abel" };
+  const arka = { id: "arka", command: "arka" };
+  assert.equal(routeGroupCommandForBot("!harga", abel).accepted, true);
+  assert.equal(routeGroupCommandForBot("!harga", arka).accepted, false);
+  assert.equal(routeGroupCommandForBot("!arka jelaskan ini", abel).accepted, false);
+  assert.deepEqual(routeGroupCommandForBot("!arka jelaskan ini", arka), {
+    accepted: true,
+    text: "!ai jelaskan ini",
+  });
+  assert.equal(routeGroupCommandForBot("!duo beri saran", abel).accepted, true);
+  assert.equal(routeGroupCommandForBot("!duo beri saran", arka).accepted, true);
+});
+
+test("socket Arka mengabaikan command Abel dan menjawab saat dipanggil", async () => {
+  const sent = [];
+  const sock = {
+    readMessages: async () => {},
+    sendPresenceUpdate: async () => {},
+    sendMessage: async (to, content) => sent.push({ to, content }),
+  };
+  const key = {
+    remoteJid: "120363000000000001@g.us",
+    participant: "628222222222@s.whatsapp.net",
+    fromMe: false,
+  };
+  const arka = { id: "arka", name: "Arka", command: "arka", memoryTurns: 16, temperature: 0.65 };
+  await handleMessage(sock, { key, message: { conversation: "!menu" } }, arka);
+  assert.equal(sent.length, 0);
+  await handleMessage(sock, { key, message: { conversation: "!arka menu" } }, arka);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].content.text, /!arka \[pesan\]/i);
+});
+
+test("perintah duo dapat dijawab satu kali oleh masing-masing bot", async () => {
+  const sent = [];
+  const sock = {
+    readMessages: async () => {},
+    sendPresenceUpdate: async () => {},
+    sendMessage: async (to, content) => sent.push({ to, content }),
+  };
+  const message = {
+    key: {
+      remoteJid: "120363000000000002@g.us",
+      participant: "628333333333@s.whatsapp.net",
+      fromMe: false,
+    },
+    message: { conversation: "!duo menu" },
+  };
+  await handleMessage(sock, message, { id: "abel", name: "Abel", command: "abel" });
+  await handleMessage(sock, message, { id: "arka", name: "Arka", command: "arka" });
+  assert.equal(sent.length, 2);
+});
+
+test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
+  assert.equal(normalizePhoneNumber("081234567890"), "6281234567890");
+  const sharedSettings = {
+    customInstruction: "Jawab akurat.",
+    botProfile: {
+      id: "arka",
+      name: "Arka",
+      role: "Pendamping grup",
+      personality: "Tenang, tegas, dan analitis",
+      customInstruction: "Fokus pada analisis.",
+    },
+  };
+  const prompt = buildSystemPrompt(sharedSettings);
+  assert.match(prompt, /Kamu adalah Arka/);
+  assert.match(prompt, /Tenang, tegas, dan analitis/);
+  assert.match(prompt, /Fokus pada analisis/);
+  assert.match(prompt, /ABEL-LAB/);
 });
 
 test("permintaan siaran memvalidasi tujuan grup dan panjang pesan", () => {

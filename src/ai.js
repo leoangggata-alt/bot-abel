@@ -65,19 +65,30 @@ function effectiveTemperature(settings, mode) {
   return base;
 }
 
-function buildSystemPrompt(settings) {
-  const custom = settings.customInstruction
-    ? `\n\n## INSTRUKSI TAMBAHAN ADMIN\n${settings.customInstruction}`
+export function buildSystemPrompt(settings) {
+  const profile = settings.botProfile || {};
+  const botName = String(profile.name || "Abel");
+  const personality = String(
+    profile.personality || "Ceria, cerdas, kreatif, dan selalu siap membantu.",
+  );
+  const extraInstructions = [settings.customInstruction, profile.customInstruction]
+    .map(value => String(value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  const custom = extraInstructions
+    ? `\n\n## INSTRUKSI TAMBAHAN ADMIN\n${extraInstructions}`
     : "";
   const catalog = buildCatalogContext();
-  return `Kamu adalah Abel, asisten AI serbaguna yang cerdas dan berjalan di WhatsApp.
+  return `Kamu adalah ${botName}, asisten AI serbaguna yang cerdas dan berjalan di WhatsApp.
 
 ## IDENTITAS
-- Nama: Abel
+- Nama: ${botName}
 - Pencipta/developer: ABEL-LAB
 - Jika ditanya siapa yang menciptakan, membuat, atau mengembangkanmu, jawab tegas bahwa kamu diciptakan oleh ABEL-LAB.
 - Jangan mengaku dibuat oleh OpenAI, Google, xAI, Groq, atau provider model lain.
-- Karakter: ceria, cerdas, kreatif, dan selalu siap membantu.
+- Peran: ${profile.role || "Asisten AI ABEL-LAB"}
+- Karakter: ${personality}
+- Abel dan Arka adalah pasangan/rekan AI buatan ABEL-LAB. Jangan memulai percakapan otomatis dengan bot lain dan jangan membuat lingkaran balasan antarbots.
 - Bahasa utama: Bahasa Indonesia yang natural, santai, dan sopan.
 - Owner: ${process.env.OWNER_NAME || "Admin"}
 
@@ -111,7 +122,7 @@ export function isCreatorQuestion(text = "") {
   const value = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ");
   const asksWho = /\b(siapa|sapa)\b/.test(value);
   const creatorWords = /\b(menciptakan|menciptkan|membuat|buat|pencipta|pembuat|developer|mengembangkan|dikembangkan)\b/.test(value);
-  const refersToBot = /\b(kamu|mu|abel|bot)\b/.test(value);
+  const refersToBot = /\b(kamu|mu|abel|arka|bot)\b/.test(value);
   return (asksWho && creatorWords && refersToBot) || /\bkamu dibuat oleh siapa\b/.test(value);
 }
 
@@ -356,18 +367,30 @@ export async function chatAI(userId, pesan, options = {}) {
 
   try {
     const settings = getAISettings();
+    const botProfile = options.profile || null;
     const image = normalizeVisionInput(options.image || null);
     const mode = detectAIMode(pesan, Boolean(image));
+    const profileTemperature = Number(botProfile?.temperature);
     const runtimeSettings = {
       ...settings,
-      temperature: effectiveTemperature(settings, mode),
+      botProfile,
+      memoryTurns: Number.isFinite(Number(botProfile?.memoryTurns))
+        ? Number(botProfile.memoryTurns)
+        : settings.memoryTurns,
+      temperature: effectiveTemperature({
+        ...settings,
+        temperature: Number.isFinite(profileTemperature)
+          ? profileTemperature
+          : settings.temperature,
+      }, mode),
     };
     const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(pesan);
     const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(pesan);
     const requestedMax = Number(options.maxOutputTokens || (isLongFormMarketing ? 5000 : wantsDetailedAnswer ? 3200 : 1800));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
-    if (!history[userId]) history[userId] = [];
-    const userHistory = history[userId];
+    const memoryKey = `${botProfile?.id || "abel"}:${userId}`;
+    if (!history[memoryKey]) history[memoryKey] = [];
+    const userHistory = history[memoryKey];
     const providerPrompt = image
       ? `INSTRUKSI AKURASI VISUAL: Periksa gambar sebelum menjawab. Jangan menebak atau melengkapi detail yang tidak terlihat. Untuk teks, angka, QR, nota, dan identitas, tulis hanya yang benar-benar terbaca. Jika tidak cukup jelas, katakan tidak terbaca/tidak yakin.\n\nPERMINTAAN PENGGUNA:\n${pesan}`
       : pesan;
@@ -394,9 +417,9 @@ export async function chatAI(userId, pesan, options = {}) {
       });
       userHistory.push({ role: "assistant", content: balasan });
       const maxMessages = runtimeSettings.memoryTurns * 2;
-      if (userHistory.length > maxMessages) history[userId] = userHistory.slice(-maxMessages);
+      if (userHistory.length > maxMessages) history[memoryKey] = userHistory.slice(-maxMessages);
     } else {
-      history[userId] = [];
+      history[memoryKey] = [];
     }
 
     return balasan;
@@ -404,13 +427,14 @@ export async function chatAI(userId, pesan, options = {}) {
     console.error("[AI Error]", error.message);
     return options.image
       ? "Maaf, gambar belum berhasil dianalisis. Periksa key/model Vision di panel admin lalu coba kirim ulang."
-      : "Ups, semua otak Abel sedang tidak tersedia. Periksa status API key di panel admin lalu coba lagi ya.";
+      : `Ups, semua otak ${options.profile?.name || "Abel"} sedang tidak tersedia. Periksa status API key di panel admin lalu coba lagi ya.`;
   }
 }
 
-export function resetAI(userId) {
-  delete history[userId];
-  console.log(`[AI] Reset history: ${userId}`);
+export function resetAI(userId, profileId = "abel") {
+  const memoryKey = `${profileId}:${userId}`;
+  delete history[memoryKey];
+  console.log(`[AI] Reset history: ${memoryKey}`);
 }
 
 export function isNeedAI(text) {

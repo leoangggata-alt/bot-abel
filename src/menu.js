@@ -58,6 +58,9 @@ Berikut daftar perintah yang tersedia:
 *💬 BANTUAN*
 ├ ${PREFIX}cs - Hubungi customer service
 ├ ${PREFIX}faq - Pertanyaan umum
+├ ${PREFIX}abel [pesan] - Panggil Abel di grup
+├ ${PREFIX}arka [pesan] - Panggil Arka di grup
+├ ${PREFIX}duo [topik] - Abel dan Arka menjawab
 ├ ${PREFIX}ai [pesan] - Tanya AI kami
 ├ ${PREFIX}analisis - Analisis gambar/OCR dari foto
 ├ ${PREFIX}gambar [deskripsi] - Buat gambar Nano Banana Pro

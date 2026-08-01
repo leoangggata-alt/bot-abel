@@ -32,6 +32,24 @@ const OWNER = process.env.OWNER_NUMBER;
 const AUTO_READ = process.env.AUTO_READ !== "false";
 const AUTO_TYPING = process.env.AUTO_TYPING !== "false";
 const ANTI_SPAM = process.env.ANTI_SPAM !== "false";
+const DEFAULT_BOT_PROFILE = {
+  id: "abel",
+  name: "Abel",
+  command: "abel",
+  personality: "Ceria, cerdas, dan kreatif",
+  memoryTurns: 16,
+  temperature: 0.8,
+};
+const DIRECT_BOT_COMMANDS = new Set([
+  "menu", "help", "info", "toko", "produk", "katalog", "harga", "pricelist",
+  "list", "promo", "diskon", "order", "beli", "pesan", "bayar", "konfirmasi",
+  "paid", "qris", "qr", "pembayaran", "cek", "status", "cs", "admin", "bantuan",
+  "faq", "ai", "tanya", "chat", "ugc", "promptugc", "ugcvideo", "affiliate",
+  "afiliasi", "kontenjualan", "prompt", "buat", "buatkan", "bikin", "bikinkan",
+  "ciptakan", "generate", "gambar", "image", "img", "foto", "reset", "rules",
+  "peraturan", "tagall", "all", "link", "ping", "analisis", "analisa", "analyze",
+  "vision", "lihat", "baca", "ocr",
+]);
 
 // Ambil deskripsi dari bahasa natural tanpa salah menangkap permintaan "prompt gambar".
 export function ambilPromptGambar(teks = "") {
@@ -177,6 +195,46 @@ export function isPerintahGrupBerprefix(text = "", prefix = PREFIX) {
   return Boolean(prefix) && value.startsWith(prefix) && value.length > prefix.length;
 }
 
+export function routeGroupCommandForBot(text = "", botProfile = DEFAULT_BOT_PROFILE) {
+  const value = String(text || "").trim();
+  if (!isPerintahGrupBerprefix(value)) return { accepted: false, text: value };
+
+  const profileId = botProfile.id || "abel";
+  const commandName = String(botProfile.command || profileId).toLowerCase();
+  const lower = value.toLowerCase();
+  const ownPrefix = `${PREFIX}${commandName}`;
+  const isOwnAddress = lower === ownPrefix || lower.startsWith(`${ownPrefix} `);
+  const isDuoAddress = lower === `${PREFIX}duo` || lower.startsWith(`${PREFIX}duo `);
+
+  if (isOwnAddress || isDuoAddress) {
+    const address = isDuoAddress ? `${PREFIX}duo` : ownPrefix;
+    const request = value.slice(address.length).trim();
+    if (!request) {
+      return {
+        accepted: true,
+        text: `${PREFIX}ai Perkenalkan dirimu secara singkat sesuai karaktermu.`,
+      };
+    }
+    const firstWord = request.split(/\s+/)[0].toLowerCase();
+    return {
+      accepted: true,
+      text: DIRECT_BOT_COMMANDS.has(firstWord)
+        ? `${PREFIX}${request}`
+        : `${PREFIX}ai ${request}`,
+    };
+  }
+
+  if (lower === `${PREFIX}abel` || lower.startsWith(`${PREFIX}abel `)) {
+    return { accepted: false, text: value };
+  }
+  if (lower === `${PREFIX}arka` || lower.startsWith(`${PREFIX}arka `)) {
+    return { accepted: false, text: value };
+  }
+
+  // Command lama tetap menjadi milik Abel agar pengguna lama tidak terganggu.
+  return { accepted: profileId === "abel", text: value };
+}
+
 export async function downloadGambarWhatsApp(imageMessage) {
   const stream = await downloadContentFromMessage(imageMessage, "image");
   const chunks = [];
@@ -199,10 +257,11 @@ function promptAnalisisGambar(text = "") {
 }
 
 // ── Handler Utama ────────────────────────────────────────────
-export async function handleMessage(sock, msg) {
+export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE) {
   try {
     const { key, message } = msg;
     if (!message) return;
+    const profile = { ...DEFAULT_BOT_PROFILE, ...botProfile };
 
     const from = key.remoteJid;
     const isGrup = from.endsWith("@g.us");
@@ -211,6 +270,10 @@ export async function handleMessage(sock, msg) {
     const senderId = isGrup
       ? (key.participant || "")
       : from;
+    const askAI = (prompt, options = {}) => chatAI(senderId, prompt, {
+      ...options,
+      profile,
+    });
 
     const senderNum = senderId
       .replace("@s.whatsapp.net", "")
@@ -235,14 +298,17 @@ export async function handleMessage(sock, msg) {
 
     console.log(`[MSG] ${isGrup ? "Grup" : "Personal"} | ${senderNum} | "${(teks || "[gambar]").slice(0, 60)}"`);
 
-    const trimTeks = teks.trim();
-    const lowerTeks = trimTeks.toLowerCase();
+    let trimTeks = teks.trim();
+    let lowerTeks = trimTeks.toLowerCase();
 
-    // Di grup, bot diam kecuali pesan diawali prefix (!). Foto juga harus
-    // memakai caption !analisis atau dibalas dengan perintah !analisis.
-    if (isGrup && !isPerintahGrupBerprefix(trimTeks)) {
-      console.log(`[SKIP] Grup tanpa prefix ${PREFIX} dari ${senderNum}`);
-      return;
+    if (isGrup) {
+      const route = routeGroupCommandForBot(trimTeks, profile);
+      if (!route.accepted) {
+        console.log(`[SKIP:${profile.name}] Pesan grup bukan untuk bot ini dari ${senderNum}`);
+        return;
+      }
+      trimTeks = route.text;
+      lowerTeks = trimTeks.toLowerCase();
     }
 
     // Fitur tambahan tidak boleh menggagalkan command utama saat koneksi goyah.
@@ -254,7 +320,7 @@ export async function handleMessage(sock, msg) {
 
     // Anti-spam (hanya di grup)
     if (isGrup && ANTI_SPAM) {
-      const spam = cekSpam(senderId);
+      const spam = cekSpam(`${profile.id}:${senderId}`);
       if (spam) {
         await kirim(sock, from, `⚠️ @${senderNum} kamu terlalu cepat mengirim pesan! Tunggu sebentar ya.`, [senderId]);
         return;
@@ -276,7 +342,7 @@ export async function handleMessage(sock, msg) {
         const imageBuffer = await downloadGambarWhatsApp(imageInfo.imageMessage);
         const basePrompt = promptAnalisisGambar(trimTeks);
         const prompt = gabungkanKonteksKutipan(basePrompt, quotedText);
-        const balasan = await chatAI(senderId, prompt, {
+        const balasan = await askAI(prompt, {
           image: {
             buffer: imageBuffer,
             mimeType: imageInfo.imageMessage.mimetype || "image/jpeg",
@@ -299,7 +365,7 @@ export async function handleMessage(sock, msg) {
 
     // ── Cek apakah ada command dengan prefix ──────────────────
     if (trimTeks.startsWith(PREFIX)) {
-      await handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, trimTeks, quotedText);
+      await handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, trimTeks, quotedText, profile);
       return;
     }
 
@@ -333,20 +399,20 @@ export async function handleMessage(sock, msg) {
     }
 
     if (!isGrup && isPermintaanPromptUGC(trimTeks)) {
-      const balasan = await chatAI(senderId, buildUGCPromptRequest(trimTeks));
+      const balasan = await askAI(buildUGCPromptRequest(trimTeks));
       await kirim(sock, from, balasan);
       return;
     }
 
     if (!isGrup && isPermintaanPromptAffiliate(trimTeks)) {
-      const balasan = await chatAI(senderId, buildAffiliatePromptRequest(trimTeks));
+      const balasan = await askAI(buildAffiliatePromptRequest(trimTeks));
       await kirim(sock, from, balasan);
       return;
     }
 
     // ── PERSONAL CHAT: semua pesan langsung ke AI (seperti ChatGPT) ──
     if (!isGrup) {
-      const balasan = await chatAI(senderId, gabungkanKonteksKutipan(trimTeks, quotedText));
+      const balasan = await askAI(gabungkanKonteksKutipan(trimTeks, quotedText));
       await kirim(sock, from, balasan);
       return;
     }
@@ -358,10 +424,14 @@ export async function handleMessage(sock, msg) {
 
 
 // ── Handler Command (!perintah) ──────────────────────────────
-async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, teks, quotedText = "") {
+async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, teks, quotedText = "", botProfile = DEFAULT_BOT_PROFILE) {
   const args = teks.slice(PREFIX.length).trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
   const sisa = args.slice(1).join(" ");
+  const askAI = (prompt, options = {}) => chatAI(senderId, prompt, {
+    ...options,
+    profile: botProfile,
+  });
 
   console.log(`[CMD] ${senderNum} → ${cmd} ${sisa}`);
 
@@ -554,7 +624,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
             : isPermintaanPromptAffiliate(sisa)
               ? buildAffiliatePromptRequest(sisa)
               : sisa;
-          const balasan = await chatAI(senderId, gabungkanKonteksKutipan(aiRequest, quotedText));
+          const balasan = await askAI(gabungkanKonteksKutipan(aiRequest, quotedText));
           await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
         }
       }
@@ -570,8 +640,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
           `🎬 *Prompt UGC Siap Copy-Paste*\n\nCara pakai:\n*${PREFIX}ugc [produk + target + platform + gaya]*\n\nContoh:\n*${PREFIX}ugc botol minum olahraga, target mahasiswa, TikTok 35 detik, gaya review jujur di kamar kos*\n\nHasil mencakup dialog, Nano Banana Pro, Google Flow/Veo per klip, audio, dan negative prompt.`
         );
       } else {
-        const balasan = await chatAI(
-          senderId,
+        const balasan = await askAI(
           gabungkanKonteksKutipan(buildUGCPromptRequest(sisa), quotedText)
         );
         await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
@@ -588,8 +657,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
           `🛍️ *Pembuat Konten Affiliate*\n\nCara pakai:\n*${PREFIX}affiliate [nama produk + detail]*\n\nContoh:\n*${PREFIX}affiliate serum wajah untuk wanita usia 20-35 tahun, gaya UGC TikTok*`
         );
       } else {
-        const balasan = await chatAI(
-          senderId,
+        const balasan = await askAI(
           gabungkanKonteksKutipan(buildAffiliatePromptRequest(sisa), quotedText)
         );
         await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
@@ -615,7 +683,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
           : isPermintaanPromptAffiliate(permintaan)
             ? buildAffiliatePromptRequest(permintaan)
             : `Buatkan prompt lengkap untuk: ${topik}. Sertakan detail visual, style, lighting, dan quality tags.`;
-        const balasan = await chatAI(senderId, gabungkanKonteksKutipan(promptReq, quotedText));
+        const balasan = await askAI(gabungkanKonteksKutipan(promptReq, quotedText));
         await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
       }
       break;
@@ -644,8 +712,8 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     }
 
     case "reset":
-      resetAI(senderId);
-      resetSpam(senderId);
+      resetAI(senderId, botProfile.id);
+      resetSpam(`${botProfile.id}:${senderId}`);
       await kirim(sock, from, `✅ Memori percakapan AI kamu berhasil direset!`);
       break;
 
@@ -698,7 +766,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       // Gabungkan cmd + sisa jadi pertanyaan ke AI
       const pertanyaan = `${cmd} ${sisa}`.trim();
       console.log(`[AI-CMD] Routing ke AI: "${pertanyaan}"`);
-      const balasan = await chatAI(senderId, gabungkanKonteksKutipan(pertanyaan, quotedText));
+      const balasan = await askAI(gabungkanKonteksKutipan(pertanyaan, quotedText));
       await kirim(sock, from, isGrup ? `@${senderNum} ${balasan}` : balasan, isGrup ? [senderId] : []);
     }
   }

@@ -24,6 +24,12 @@ import {
   listBroadcastJobs,
   MAX_ACTIVE_BROADCASTS,
 } from "./src/broadcast-store.js";
+import {
+  getBotProfiles,
+  getBotStatuses,
+  requestBotRestart,
+  updateBotProfile,
+} from "./src/bot-profile-store.js";
 
 dotenv.config();
 
@@ -270,6 +276,42 @@ app.post("/api/broadcast/jobs", (req, res) => {
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message });
   }
+});
+
+// Dua identitas bot memakai koneksi dan memori terpisah, tetapi pool API sama.
+app.get("/api/bots", (req, res) => {
+  res.json({
+    profiles: getBotProfiles(),
+    statuses: getBotStatuses(),
+    sharedApiPool: true,
+  });
+});
+
+app.put("/api/bots/:id", (req, res) => {
+  try {
+    const profile = updateBotProfile(req.params.id, req.body);
+    requestBotRestart(req.params.id);
+    return res.json({ success: true, profile, restartQueued: true });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+});
+
+app.post("/api/bots/:id/restart", (req, res) => {
+  try {
+    requestBotRestart(req.params.id);
+    return res.status(202).json({ success: true, restartQueued: true });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+});
+
+app.get("/api/bots/:id/qr", (req, res) => {
+  const id = req.params.id;
+  if (!getBotProfiles()[id]) return res.status(404).json({ error: "Bot tidak ditemukan" });
+  const qrFile = path.join(__dirname, id === "abel" ? "qrcode.png" : `qrcode-${id}.png`);
+  if (!fs.existsSync(qrFile)) return res.status(404).json({ error: "QR belum tersedia" });
+  return res.sendFile(qrFile);
 });
 
 app.get("/api/stats", (req, res) => {
