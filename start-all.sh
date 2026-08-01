@@ -80,6 +80,7 @@ if [ "${ENABLE_TUNNEL_VALUE,,}" = "true" ]; then
   fi
 else
   echo "Admin  : http://127.0.0.1:${ADMIN_PORT_VALUE}"
+  echo "Mobile : http://127.0.0.1:${ADMIN_PORT_VALUE}/m"
   echo "PC Wi-Fi: lihat alamat LAN pada Dashboard panel"
   echo "Tunnel : nonaktif (ubah ENABLE_TUNNEL=true bila perlu akses dari luar Wi-Fi)"
 fi

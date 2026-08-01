@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <meta name="theme-color" content="#09090d"/>
+  <title>ABEL-LAB Mobile</title>
+  <style>
+    :root{--bg:#09090d;--card:#15151d;--line:#292938;--text:#f8fafc;--muted:#9ca3af;--violet:#8b5cf6;--cyan:#22d3ee;--green:#34d399;--yellow:#fbbf24;--red:#fb7185}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:14px}main{width:min(100%,620px);margin:auto;padding:14px 12px 40px}.top{display:flex;align-items:center;gap:11px;margin:3px 2px 16px}.logo{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(135deg,var(--violet),var(--cyan));font-size:21px}.top h1{font-size:17px;margin:0}.sub,.muted{color:var(--muted);font-size:11px}.top .sub{margin-top:3px}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;margin-bottom:12px;overflow:hidden}.head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px;border-bottom:1px solid var(--line)}.title{font-weight:800}.body{padding:14px}.badge{font-size:9px;font-weight:900;letter-spacing:.6px;padding:6px 9px;border-radius:999px;background:#252533;color:var(--muted)}.badge.primary,.badge.connected{color:var(--green);background:rgba(52,211,153,.1)}.badge.standby,.badge.waiting_qr,.badge.connecting,.badge.reconnecting{color:var(--yellow);background:rgba(251,191,36,.1)}.badge.logged_out,.badge.error,.badge.pairing_error{color:var(--red);background:rgba(251,113,133,.1)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.full{grid-column:1/-1}label{display:block;color:var(--muted);font-size:10px;font-weight:700;margin-bottom:5px}input,select{width:100%;border:1px solid var(--line);background:#0e0e14;color:var(--text);border-radius:9px;padding:10px 11px;font:inherit;min-width:0}.check{display:flex;align-items:center;gap:8px;color:var(--text);font-size:12px}.check input{width:auto}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{border:1px solid var(--line);background:#252533;color:var(--text);border-radius:9px;padding:9px 11px;font-weight:750;font-size:12px;flex:1;min-width:110px}.btn.primary{background:var(--violet);border-color:var(--violet)}.btn.danger{color:#fecdd3;background:rgba(251,113,133,.1);border-color:rgba(251,113,133,.3)}.btn:disabled{opacity:.4}.note{margin-top:9px;color:var(--yellow);font-size:10px;line-height:1.5}.qr{display:block;width:min(100%,280px);margin:12px auto 0;background:white;padding:8px;border-radius:10px}.pair{font-family:ui-monospace,monospace;font-size:21px;font-weight:900;letter-spacing:2px;text-align:center;color:var(--yellow);margin:12px}.provider{border-top:1px solid var(--line);padding:12px 0}.provider:first-child{border-top:0}.provider-row{display:flex;justify-content:space-between;align-items:center;gap:8px}.keys{color:var(--muted);font:11px ui-monospace,monospace;margin:7px 0;line-height:1.6}.add-row{display:grid;grid-template-columns:1fr 1.4fr auto;gap:6px}.add-row .btn{min-width:60px}.error{color:var(--red)}#toast{position:fixed;left:12px;right:12px;bottom:14px;background:#272738;border:1px solid var(--line);padding:12px;border-radius:10px;text-align:center;display:none;z-index:5}.links{display:flex;justify-content:center;gap:15px;margin-top:18px}.links a{color:var(--cyan);font-size:11px}@media(max-width:390px){.grid,.add-row{grid-template-columns:1fr}.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="top"><div class="logo">A</div><div><h1>ABEL-LAB Mobile</h1><div class="sub">Panel ringan untuk Termux</div></div></header>
+
+  <section class="card">
+    <div class="head"><span class="title">📱 Mode Host</span><span id="host-badge" class="badge">MEMUAT</span></div>
+    <div class="body">
+      <div id="host-meta" class="muted">Memeriksa perangkat...</div>
+      <div class="actions"><button id="primary-btn" class="btn primary" onclick="changeRole('primary')">▶ PRIMARY</button><button id="standby-btn" class="btn danger" onclick="changeRole('standby')">⏸ STANDBY</button></div>
+      <div class="note">Hanya satu perangkat boleh PRIMARY. Jadikan PC STANDBY sebelum menautkan bot Termux.</div>
+    </div>
+  </section>
+
+  <div id="bots"><section class="card"><div class="body muted">Memuat Abel dan Arka...</div></section></div>
+
+  <section class="card">
+    <div class="head"><span class="title">🔑 API Key</span><button class="btn" style="flex:0;min-width:90px" onclick="loadKeys()">Muat</button></div>
+    <div id="providers" class="body muted">API key tidak dimuat otomatis agar panel tetap ringan.</div>
+  </section>
+
+  <div class="links"><a href="/">Panel lengkap</a><a href="javascript:location.reload()">Muat ulang</a></div>
+</main>
+<div id="toast"></div>
+<script>
+  let botData=null;
+  const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  async function api(url,options){const r=await fetch(url,options);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
+  function toast(message){const el=document.getElementById('toast');el.textContent=message;el.style.display='block';setTimeout(()=>el.style.display='none',2600)}
+  async function loadHost(){try{const h=await api('/api/host-mode');const primary=h.role==='primary';const b=document.getElementById('host-badge');b.className=`badge ${h.role}`;b.textContent=primary?'● PRIMARY':'● STANDBY';document.getElementById('host-meta').textContent=`${h.hostName} • ${h.platform} • ${h.localUrl}`;document.getElementById('primary-btn').disabled=primary;document.getElementById('standby-btn').disabled=!primary}catch(e){document.getElementById('host-meta').innerHTML=`<span class="error">${esc(e.message)}</span>`}}
+  async function changeRole(role){const primary=role==='primary';if(!confirm(primary?'Jadikan HP ini PRIMARY? Pastikan PC sudah STANDBY.':'Jadikan perangkat ini STANDBY? Bot akan terputus tetapi panel tetap hidup.'))return;await api('/api/host-mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});toast(primary?'Host menjadi PRIMARY':'Host menjadi STANDBY');setTimeout(()=>{loadHost();loadBots()},2200)}
+  function botCard(id,p,s){const state=s.state||'offline';const qr=s.qrAvailable?`<img class="qr" src="/api/bots/${id}/qr?t=${Date.now()}" alt="QR ${esc(p.name)}"/>`:'';const pair=s.pairingCode?`<div class="pair">${esc(s.pairingCode)}</div>`:'';return `<section class="card"><div class="head"><span class="title">${id==='abel'?'👩🏻':'👨🏻'} ${esc(p.name)}</span><span class="badge ${esc(state)}">${esc(state.toUpperCase())}</span></div><div class="body"><div class="grid"><div><label>Nama</label><input id="${id}-name" value="${esc(p.name)}" maxlength="40"/></div><div><label>Nomor WhatsApp</label><input id="${id}-number" value="${esc(p.pairingNumber)}" inputmode="numeric" placeholder="628..."/></div><div class="full"><label>Metode tautan</label><select id="${id}-method"><option value="qr" ${p.linkMethod!=='code'?'selected':''}>QR</option><option value="code" ${p.linkMethod==='code'?'selected':''}>Kode pairing</option></select></div><label class="check full"><input id="${id}-enabled" type="checkbox" ${p.enabled?'checked':''}/> Aktifkan ${esc(p.name)}</label></div>${pair}${qr}<div class="actions"><button class="btn primary" onclick="saveBot('${id}')">Simpan</button><button class="btn" onclick="restartBot('${id}')">Hubungkan ulang</button></div><div class="muted" style="margin-top:9px">${esc(s.message||'')}</div></div></section>`}
+  async function loadBots(){try{botData=await api('/api/bots');document.getElementById('bots').innerHTML=Object.entries(botData.profiles).map(([id,p])=>botCard(id,p,botData.statuses[id]||{})).join('')}catch(e){document.getElementById('bots').innerHTML=`<section class="card"><div class="body error">${esc(e.message)}</div></section>`}}
+  async function saveBot(id){const p=botData.profiles[id];const data={...p,name:document.getElementById(`${id}-name`).value.trim(),pairingNumber:document.getElementById(`${id}-number`).value,linkMethod:document.getElementById(`${id}-method`).value,enabled:document.getElementById(`${id}-enabled`).checked};await api(`/api/bots/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});toast(`${data.name} disimpan`);setTimeout(loadBots,2200)}
+  async function restartBot(id){await api(`/api/bots/${id}/restart`,{method:'POST'});toast('Menghubungkan ulang');setTimeout(loadBots,2200)}
+  async function loadKeys(){const box=document.getElementById('providers');box.textContent='Memuat...';try{const data=await api('/api/api-keys');box.className='body';box.innerHTML=Object.entries(data.providers).map(([id,p])=>`<div class="provider"><div class="provider-row"><strong>${esc(p.icon)} ${esc(p.name)}</strong><span class="muted">${p.keys.length}/${data.maxSlots}</span></div><div class="keys">${p.keys.map(k=>`${esc(k.label)} — ${esc(k.masked)} ${k.active?'●':'○'}`).join('<br>')||'Belum ada key'}</div><div class="add-row"><input id="label-${id}" placeholder="Nama slot"/><input id="key-${id}" type="password" placeholder="API key baru"/><button class="btn primary" onclick="addKey('${id}')">＋</button></div></div>`).join('')}catch(e){box.innerHTML=`<span class="error">${esc(e.message)}</span>`}}
+  async function addKey(provider){const key=document.getElementById(`key-${provider}`).value;const label=document.getElementById(`label-${provider}`).value||'Key Mobile';await api(`/api/api-keys/${provider}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,label})});toast('API key disimpan');loadKeys()}
+  loadHost();loadBots();setInterval(()=>{if(!document.hidden){loadHost();loadBots()}},5000);
+</script>
+</body>
+</html>

@@ -336,8 +336,10 @@ test("input vision divalidasi dan diubah ke base64", () => {
 });
 
 test("JavaScript panel admin valid", () => {
-  const html = fs.readFileSync(path.join(root, "public", "admin.html"), "utf8");
-  const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
-  assert.ok(scripts.length > 0);
-  for (const script of scripts) new Function(script[1]);
+  for (const file of ["admin.html", "mobile.html"]) {
+    const html = fs.readFileSync(path.join(root, "public", file), "utf8");
+    const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+    assert.ok(scripts.length > 0);
+    for (const script of scripts) new Function(script[1]);
+  }
 });

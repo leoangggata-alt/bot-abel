@@ -375,6 +375,10 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+app.get(["/m", "/mobile"], (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "mobile.html"));
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
   console.log(`║  🛠️  Admin Panel Bot Abel             ║`);

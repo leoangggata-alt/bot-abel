@@ -123,6 +123,7 @@ echo "Setup selesai."
 echo "Jalankan bot: bash start-all.sh"
 echo "Lihat status: bash status-all.sh"
 echo "Panel di HP: http://127.0.0.1:8080"
+echo "Panel ringan: http://127.0.0.1:8080/m"
 echo
 echo "Agar benar-benar 24/7:"
 echo "1. Install Termux:Boot dari F-Droid dan buka aplikasinya satu kali."
