@@ -9,6 +9,7 @@ data/orders.json
 data/settings.json
 data/products.json
 data/api-keys.json
+data/ai-settings.json
 data/.api-key-secret
 qrcode.png
 bot-runtime.tar.gz

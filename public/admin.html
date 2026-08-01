@@ -254,6 +254,26 @@
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 18px; align-items: start;
     }
+    .runtime-card {
+      background: linear-gradient(145deg, rgba(124,58,237,.12), rgba(14,165,233,.06));
+      border: 1px solid rgba(167,139,250,.28); border-radius: var(--radius);
+      padding: 20px; margin-bottom: 20px;
+    }
+    .runtime-title { font-size: 16px; font-weight: 800; margin-bottom: 5px; }
+    .runtime-note { color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-bottom: 18px; }
+    .runtime-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+    .runtime-grid .full { grid-column: 1 / -1; }
+    .runtime-grid label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
+    .runtime-grid input, .runtime-grid textarea { width: 100%; }
+    .runtime-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+    .runtime-hot { color: var(--success); font-size: 11px; font-weight: 700; }
+    .model-details { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+    .model-details summary { cursor: pointer; font-size: 13px; font-weight: 800; color: var(--primary-light); }
+    .provider-test { margin-left: auto; white-space: nowrap; }
+    .provider-status { padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; background: var(--surface2); color: var(--text-muted); }
+    .provider-status.ok { background: rgba(16,185,129,.12); color: var(--success); }
+    .provider-status.error { background: rgba(239,68,68,.12); color: var(--danger); }
+    .provider-result { padding: 0 14px 12px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
     .provider-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius); overflow: hidden;
@@ -321,6 +341,8 @@
       .stats-grid { grid-template-columns: repeat(2,1fr); }
       .form-grid { grid-template-columns: 1fr; }
       .api-grid { grid-template-columns: 1fr; }
+      .runtime-grid { grid-template-columns: 1fr; }
+      .runtime-grid .full { grid-column: auto; }
       .key-add { grid-template-columns: 1fr; }
       .provider-card, .key-slot, .key-info { min-width: 0; }
       #page-api-keys .page-header { flex-direction: column; }
@@ -534,6 +556,53 @@
         File penyimpanan di perangkat tetap terenkripsi. Jangan berikan kode akses
         panel kepada orang lain.
       </div>
+      <section class="runtime-card">
+        <div class="runtime-title">🧠 Otak, Urutan Cadangan & Memori</div>
+        <div class="runtime-note">
+          Provider dicoba dari kiri ke kanan. Jika key, kuota, model, atau jaringan provider pertama gagal,
+          bot otomatis memakai provider berikutnya. Perubahan langsung aktif tanpa restart.
+        </div>
+        <div class="runtime-grid">
+          <div>
+            <label>URUTAN OTAK CHAT</label>
+            <input id="ai-text-order" placeholder="openai, gemini, groq, xai"/>
+          </div>
+          <div>
+            <label>URUTAN GENERATOR GAMBAR</label>
+            <input id="ai-image-order" placeholder="gemini, openai, xai, seadream, leonardo, pollinations"/>
+          </div>
+          <div>
+            <label>MEMORI PERCAKAPAN (0–50 PUTARAN)</label>
+            <input id="ai-memory-turns" type="number" min="0" max="50"/>
+          </div>
+          <div>
+            <label>KREATIVITAS / TEMPERATURE (0–2)</label>
+            <input id="ai-temperature" type="number" min="0" max="2" step="0.1"/>
+          </div>
+          <div class="full">
+            <label>INSTRUKSI TAMBAHAN UNTUK SEMUA OTAK</label>
+            <textarea id="ai-custom-instruction" rows="3" maxlength="4000" placeholder="Contoh: Selalu jawab dengan singkat dan sebut nama toko ABEL-LAB."></textarea>
+          </div>
+        </div>
+        <details class="model-details">
+          <summary>Atur nama model masing-masing provider</summary>
+          <div class="runtime-grid" style="margin-top:14px">
+            <div><label>CHAT — OPENAI</label><input id="model-text-openai"/></div>
+            <div><label>CHAT — GEMINI</label><input id="model-text-gemini"/></div>
+            <div><label>CHAT — GROQ</label><input id="model-text-groq"/></div>
+            <div><label>CHAT — XAI / GROK</label><input id="model-text-xai"/></div>
+            <div><label>GAMBAR — GEMINI / NANO BANANA</label><input id="model-image-gemini"/></div>
+            <div><label>GAMBAR — OPENAI</label><input id="model-image-openai"/></div>
+            <div><label>GAMBAR — XAI</label><input id="model-image-xai"/></div>
+            <div><label>GAMBAR — SEADREAM</label><input id="model-image-seadream"/></div>
+            <div><label>GAMBAR — LEONARDO MODEL ID</label><input id="model-image-leonardo"/></div>
+          </div>
+        </details>
+        <div class="runtime-actions">
+          <button class="btn btn-primary" onclick="saveAISettings()">💾 Terapkan Otak & Memori</button>
+          <span class="runtime-hot">● LANGSUNG AKTIF</span>
+        </div>
+      </section>
       <div class="api-grid" id="api-provider-grid">
         <div class="api-empty">Memuat konfigurasi API key...</div>
       </div>
@@ -600,6 +669,8 @@
   let allProducts = [];
   let allOrders = [];
   let apiKeyData = null;
+  let aiSettingsData = null;
+  const providerTestResults = {};
   let editingId = null;
   let isAktif = true;
 
@@ -871,10 +942,77 @@
   async function loadApiKeys() {
     const grid = document.getElementById('api-provider-grid');
     try {
-      apiKeyData = await fetch('/api/api-keys?reveal=true').then(parseApiResponse);
+      [apiKeyData, aiSettingsData] = await Promise.all([
+        fetch('/api/api-keys?reveal=true').then(parseApiResponse),
+        fetch('/api/ai-settings').then(parseApiResponse),
+      ]);
+      renderAISettings();
       renderApiKeys();
     } catch (error) {
       grid.innerHTML = `<div class="api-empty">❌ ${escapeHtml(error.message)}</div>`;
+    }
+  }
+
+  function setField(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.value = value ?? '';
+  }
+
+  function renderAISettings() {
+    if (!aiSettingsData) return;
+    setField('ai-text-order', (aiSettingsData.textOrder || []).join(', '));
+    setField('ai-image-order', (aiSettingsData.imageOrder || []).join(', '));
+    setField('ai-memory-turns', aiSettingsData.memoryTurns);
+    setField('ai-temperature', aiSettingsData.temperature);
+    setField('ai-custom-instruction', aiSettingsData.customInstruction);
+    for (const [provider, model] of Object.entries(aiSettingsData.textModels || {})) {
+      setField(`model-text-${provider}`, model);
+    }
+    for (const [provider, model] of Object.entries(aiSettingsData.imageModels || {})) {
+      setField(`model-image-${provider}`, model);
+    }
+  }
+
+  function splitOrder(id) {
+    return document.getElementById(id).value
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  async function saveAISettings() {
+    const data = {
+      textOrder: splitOrder('ai-text-order'),
+      imageOrder: splitOrder('ai-image-order'),
+      memoryTurns: Number(document.getElementById('ai-memory-turns').value),
+      temperature: Number(document.getElementById('ai-temperature').value),
+      customInstruction: document.getElementById('ai-custom-instruction').value,
+      textModels: {
+        openai: document.getElementById('model-text-openai').value,
+        gemini: document.getElementById('model-text-gemini').value,
+        groq: document.getElementById('model-text-groq').value,
+        xai: document.getElementById('model-text-xai').value,
+      },
+      imageModels: {
+        gemini: document.getElementById('model-image-gemini').value,
+        openai: document.getElementById('model-image-openai').value,
+        xai: document.getElementById('model-image-xai').value,
+        seadream: document.getElementById('model-image-seadream').value,
+        leonardo: document.getElementById('model-image-leonardo').value,
+      },
+    };
+    try {
+      const response = await fetch('/api/ai-settings', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(data),
+      });
+      const result = await parseApiResponse(response);
+      aiSettingsData = result.settings;
+      renderAISettings();
+      showToast('✅ Otak, model, dan memori langsung diperbarui');
+    } catch (error) {
+      showToast(`❌ ${error.message}`, 'error');
     }
   }
 
@@ -886,6 +1024,12 @@
 
     grid.innerHTML = Object.entries(providers).map(([provider, data]) => {
       const keys = data.keys || [];
+      const test = providerTestResults[provider];
+      const statusClass = test?.testing ? '' : test?.ok ? 'ok' : test ? 'error' : '';
+      const statusText = test?.testing ? 'Menguji…' : test?.ok ? 'TERHUBUNG' : test ? 'GAGAL' : 'BELUM DITES';
+      const testDetails = test?.slots?.length
+        ? test.slots.map(slot => `${escapeHtml(slot.label)}: ${slot.ok ? '✅' : '❌'} ${escapeHtml(slot.message)}`).join('<br>')
+        : test?.message ? escapeHtml(test.message) : '';
       const emptyCount = Math.max(0, minSlots - keys.length);
       const rows = keys.map((key, index) => `
         <div class="key-slot">
@@ -918,8 +1062,13 @@
               <div class="provider-name">${escapeHtml(data.name)}</div>
               <div class="provider-usage">${escapeHtml(data.usage)}</div>
             </div>
+            <span class="provider-status ${statusClass}">${statusText}</span>
             <div class="slot-count">${keys.length}/${maxSlots}</div>
           </div>
+          <div style="padding:12px 14px 0;display:flex;justify-content:flex-end">
+            <button class="btn btn-sm provider-test" onclick="testProvider('${provider}')" ${test?.testing ? 'disabled' : ''}>🔌 Tes Koneksi</button>
+          </div>
+          ${testDetails ? `<div class="provider-result">${testDetails}</div>` : ''}
           <div class="key-list">${rows}${placeholders}</div>
           <div class="key-add">
             <input id="key-label-${provider}" placeholder="Nama slot, mis. Utama" ${disabled}/>
@@ -932,6 +1081,24 @@
         </section>
       `;
     }).join('');
+  }
+
+  async function testProvider(provider) {
+    providerTestResults[provider] = { testing: true, message: 'Sedang menguji koneksi…', slots: [] };
+    renderApiKeys();
+    try {
+      const response = await fetch(`/api/api-keys/${provider}/test`, { method: 'POST' });
+      providerTestResults[provider] = await parseApiResponse(response);
+      renderApiKeys();
+      showToast(
+        providerTestResults[provider].ok ? '✅ Provider terhubung' : `❌ ${providerTestResults[provider].message}`,
+        providerTestResults[provider].ok ? 'success' : 'error'
+      );
+    } catch (error) {
+      providerTestResults[provider] = { ok: false, message: error.message, slots: [] };
+      renderApiKeys();
+      showToast(`❌ ${error.message}`, 'error');
+    }
   }
 
   async function addApiKey(provider) {

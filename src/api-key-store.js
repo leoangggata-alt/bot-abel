@@ -35,14 +35,14 @@ export const API_PROVIDERS = Object.freeze({
     icon: "𝕏",
     envName: "XAI_API_KEY",
     color: "#f8fafc",
-    usage: "Otak chat Grok dari xAI",
+    usage: "Otak chat dan gambar Grok",
   },
   gemini: {
     name: "Google Gemini",
     icon: "💠",
     envName: "GEMINI_API_KEY",
     color: "#4285f4",
-    usage: "Otak chat Google",
+    usage: "Otak chat dan Nano Banana",
   },
   seadream: {
     name: "SeaDream",

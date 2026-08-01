@@ -7,7 +7,14 @@ dotenv.config();
 
 import { chatAI, resetAI, isNeedAI } from "./ai.js";
 import { kirimGambar } from "./image.js";
-import { prosesOrder, cekOrder, pesanBantuanOrder, kirimQRIS, konfirmasiPembayaran } from "./order.js";
+import {
+  prosesOrder,
+  cekOrder,
+  pesanBantuanOrder,
+  kirimQRIS,
+  kirimQRISOrderTerakhir,
+  konfirmasiPembayaran,
+} from "./order.js";
 import {
   menuUtama, infoToko, infoProduk, infoHarga, infoPromo,
   caraPesan, faq, statusOrder, BANNER_FILE
@@ -41,6 +48,13 @@ export function ambilPromptGambar(teks = "") {
     if (cocok?.[1]?.trim()) return cocok[1].trim();
   }
   return "";
+}
+
+export function isPermintaanQRIS(teks = "") {
+  const nilai = String(teks).toLowerCase().trim();
+  const menyebutQR = /\b(qris|qr|kode qr)\b/.test(nilai);
+  const meminta = /\b(mana|kirim|kirimkan|tampil|tampilkan|lihat|bayar|pembayaran|pesanan|order)\b/.test(nilai);
+  return menyebutQR && meminta;
 }
 
 // ── Handler Utama ────────────────────────────────────────────
@@ -123,6 +137,18 @@ export async function handleMessage(sock, msg) {
         await kirim(sock, from, menuUtama(isGrup));
         return;
       }
+    }
+
+    // Permintaan ulang QRIS harus ditangani sistem order, bukan dijawab oleh AI.
+    if (isPermintaanQRIS(trimTeks)) {
+      const target = isGrup ? senderId : from;
+      const result = await kirimQRISOrderTerakhir(sock, target, senderNum, isGrup ? [senderId] : []);
+      if (!result.ok) {
+        await kirim(sock, from, isGrup ? `@${senderNum} ${result.pesan}` : result.pesan, isGrup ? [senderId] : []);
+      } else if (isGrup) {
+        await kirim(sock, from, `@${senderNum} ✅ QRIS sudah dikirim ke chat pribadimu.`, [senderId]);
+      }
+      return;
     }
 
     // Kalimat natural seperti "buatkan gambar kucing" langsung ke generator gambar.
@@ -245,6 +271,15 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         await kirim(sock, from, pesanBantuanOrder());
       } else {
         const result = prosesOrder(senderNum, sisa);
+        if (!result.ok) {
+          await kirim(
+            sock,
+            from,
+            isGrup ? `@${senderNum} ${result.pesan}` : result.pesan,
+            isGrup ? [senderId] : []
+          );
+          break;
+        }
         if (isGrup) {
           // Di grup: beri tahu sebentar
           await kirim(sock, from,
@@ -252,16 +287,20 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
             [senderId]
           );
           // Kirim struk ke DM pribadi user
-          const dmJid = senderNum.includes("@") ? senderNum : `${senderNum}@s.whatsapp.net`;
+          // WhatsApp baru dapat memberi JID @lid. Pakai identitas asli pengirim;
+          // mengubahnya menjadi @s.whatsapp.net membuat QRIS salah tujuan.
+          const dmJid = senderId;
           await kirim(sock, dmJid, result.pesan);
-          if (result.ok) {
-            await kirimQRIS(sock, dmJid, result.noOrder, result.total);
+          const qrSent = await kirimQRIS(sock, dmJid, result.noOrder, result.total);
+          if (!qrSent) {
+            await kirim(sock, from, `@${senderNum} ⚠️ QRIS belum berhasil dikirim. Kirim pesan pribadi lalu ketik *!qris*.`, [senderId]);
           }
         } else {
           // Personal: kirim langsung di chat
           await kirim(sock, from, result.pesan);
-          if (result.ok) {
-            await kirimQRIS(sock, from, result.noOrder, result.total);
+          const qrSent = await kirimQRIS(sock, from, result.noOrder, result.total);
+          if (!qrSent) {
+            await kirim(sock, from, "⚠️ QRIS belum berhasil dikirim. Ketik *!qris* untuk mencoba lagi atau *!cs* untuk bantuan.");
           }
         }
       }
@@ -302,8 +341,27 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
 
     case "bayar":
     case "pembayaran":
-      await kirim(sock, from, infoToko());
+    case "qris":
+    case "qr": {
+      const target = isGrup ? senderId : from;
+      const result = await kirimQRISOrderTerakhir(
+        sock,
+        target,
+        senderNum,
+        isGrup ? [senderId] : []
+      );
+      if (!result.ok) {
+        await kirim(
+          sock,
+          from,
+          isGrup ? `@${senderNum} ${result.pesan}` : result.pesan,
+          isGrup ? [senderId] : []
+        );
+      } else if (isGrup) {
+        await kirim(sock, from, `@${senderNum} ✅ QRIS sudah dikirim ke chat pribadimu.`, [senderId]);
+      }
       break;
+    }
 
     // ── CS & FAQ ──
     case "cs":

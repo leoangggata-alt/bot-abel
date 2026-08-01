@@ -61,7 +61,7 @@ export async function kirimQRIS(sock, to, noOrder, total, mentions = []) {
           `✅ Setelah transfer, ketik:\n*!konfirmasi ${noOrder}*`,
         mentions
       });
-      return;
+      return false;
     }
 
     const qrisBuffer = fs.readFileSync(QRIS_FILE);
@@ -91,9 +91,42 @@ export async function kirimQRIS(sock, to, noOrder, total, mentions = []) {
     });
 
     console.log(`[ORDER] QRIS terkirim untuk order ${noOrder}`);
+    return true;
   } catch (err) {
     console.error("[ORDER] Gagal kirim QRIS:", err.message);
+    return false;
   }
+}
+
+// Ambil pesanan terakhir milik pembeli yang masih membutuhkan pembayaran.
+export function ambilOrderPembayaranTerakhir(senderNum) {
+  const target = String(senderNum || "")
+    .replace(/@(?:s\.whatsapp\.net|lid)$/i, "")
+    .split(":")[0];
+  return [...bacaOrders()].reverse().find(order =>
+    String(order.senderNum || "") === target &&
+    order.status === "Menunggu Pembayaran" &&
+    order.konfirmasi !== true
+  ) || null;
+}
+
+export async function kirimQRISOrderTerakhir(sock, to, senderNum, mentions = []) {
+  const order = ambilOrderPembayaranTerakhir(senderNum);
+  if (!order) {
+    return {
+      ok: false,
+      pesan: "❌ Tidak ada pesananmu yang sedang menunggu pembayaran.\n\nBuat pesanan dulu dengan *!order [KODE] [JUMLAH]*.",
+    };
+  }
+
+  const sent = await kirimQRIS(sock, to, order.noOrder, order.total, mentions);
+  return {
+    ok: sent,
+    order,
+    pesan: sent
+      ? `✅ QRIS untuk order *${order.noOrder}* sudah dikirim.`
+      : "❌ QRIS belum berhasil dikirim. Silakan hubungi admin dengan *!cs*.",
+  };
 }
 
 // ── Proses order baru ─────────────────────────────────────────

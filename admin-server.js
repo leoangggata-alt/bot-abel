@@ -15,6 +15,8 @@ import {
   listApiKeys,
   updateApiKey,
 } from "./src/api-key-store.js";
+import { getAISettings, updateAISettings } from "./src/ai-settings.js";
+import { testProvider } from "./src/provider-test.js";
 
 dotenv.config();
 
@@ -203,6 +205,27 @@ app.delete("/api/api-keys/:provider/:id", (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/api-keys/:provider/test", async (req, res) => {
+  try {
+    res.json(await testProvider(req.params.provider));
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+// Pengaturan ini dibaca ulang oleh bot pada setiap permintaan, jadi tidak perlu restart.
+app.get("/api/ai-settings", (req, res) => {
+  res.json(getAISettings());
+});
+
+app.put("/api/ai-settings", (req, res) => {
+  try {
+    res.json({ success: true, settings: updateAISettings(req.body) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 

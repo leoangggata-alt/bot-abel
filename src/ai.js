@@ -1,356 +1,265 @@
-// ============================================================
-//  src/ai.js - OpenAI sebagai otak utama, Groq sebagai cadangan
-// ============================================================
+// Otak AI Abel: urutan provider, model, dan memori diatur dari panel admin.
 import https from "https";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import { getApiKeyCandidates } from "./api-key-store.js";
+import { getAISettings } from "./ai-settings.js";
 dotenv.config();
 
-const OPENAI_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-5.6-sol";
-
-// Memori percakapan per user
 const history = {};
 
-// ── System Prompt Abel ───────────────────────────────────────
-const SYSTEM_PROMPT = `Kamu adalah Abel, asisten AI cerdas seperti ChatGPT yang berjalan di WhatsApp! 💖
+function buildSystemPrompt(settings) {
+  const custom = settings.customInstruction
+    ? `\n\n## INSTRUKSI TAMBAHAN ADMIN\n${settings.customInstruction}`
+    : "";
+  return `Kamu adalah Abel, asisten AI cerdas yang berjalan di WhatsApp.
 
 ## IDENTITAS
 - Nama: Abel
-- Karakter: Ceria, cerdas, kreatif, dan selalu siap membantu
-- Bahasa: Indonesia (santai tapi sopan)
+- Pencipta/developer: ABEL-LAB
+- Jika ditanya siapa yang menciptakan, membuat, atau mengembangkanmu, jawab tegas bahwa kamu diciptakan oleh ABEL-LAB.
+- Jangan mengaku dibuat oleh OpenAI, Google, xAI, Groq, atau provider model lain.
+- Karakter: ceria, cerdas, kreatif, dan selalu siap membantu.
+- Bahasa utama: Bahasa Indonesia yang natural, santai, dan sopan.
 - Owner: ${process.env.OWNER_NAME || "Admin"}
 
-## KEMAMPUAN UTAMA
+## PERILAKU
+- Jawab ringkas tetapi lengkap; gunakan poin bila membantu.
+- Ingat konteks percakapan yang diberikan.
+- Jika diminta membuat gambar, jangan hanya memberi prompt; sistem bot akan menangani generator gambar sebelum chat ini.
+- Tolak secara sopan permintaan berbahaya atau ilegal.
+- Jika tidak yakin, jelaskan batas kepastian dengan singkat.${custom}`;
+}
 
-### 💬 Menjawab Pertanyaan
-- Sains, teknologi, matematika, sejarah, agama, budaya
-- Penjelasan konsep rumit dengan bahasa sederhana
-- Fakta dan informasi akurat
+export function isCreatorQuestion(text = "") {
+  const value = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const asksWho = /\b(siapa|sapa)\b/.test(value);
+  const creatorWords = /\b(menciptakan|menciptkan|membuat|buat|pencipta|pembuat|developer|mengembangkan|dikembangkan)\b/.test(value);
+  const refersToBot = /\b(kamu|mu|abel|bot)\b/.test(value);
+  return (asksWho && creatorWords && refersToBot) || /\bkamu dibuat oleh siapa\b/.test(value);
+}
 
-### ✍️ Membuat Konten
-- Prompt untuk AI image generation (Midjourney, DALL-E, Stable Diffusion)
-- Caption Instagram, TikTok, Twitter
-- Artikel, essay, laporan
-- Cerita pendek, puisi, lirik lagu
-- Email profesional, surat resmi
-- Bio profil, deskripsi produk
-
-### 🛠️ Membuat Prompt AI
-Jika diminta buat prompt, format seperti ini:
-"Prompt: [deskripsi detail dalam bahasa Inggris untuk AI image]
-Style: [realistic/anime/digital art/dll]
-Quality: high quality, 4K, detailed"
-
-### 💡 Membantu Kebutuhan Sehari-hari
-- Resep masakan
-- Tips kesehatan dan kebugaran
-- Rekomendasi produk/tempat
-- Solusi masalah teknis
-- Ide kreatif dan brainstorming
-- Terjemahan bahasa
-- Koreksi teks/grammar
-
-### 💼 Bisnis & Produktivitas
-- Strategi marketing dan iklan
-- Analisis bisnis
-- Template presentasi
-- Rencana kerja dan to-do list
-
-## CARA BERBICARA
-- Gunakan Bahasa Indonesia yang natural dan hangat
-- Pakai emoji yang sesuai konteks 😊✨
-- Jawaban ringkas tapi lengkap (3-5 paragraf max)
-- Gunakan format dengan poin/bullet jika membantu
-- Jika dipuji, sambut dengan humble 🥰
-- Jika ada yang kasar, tetap sopan tapi tegas
-
-## ATURAN
-- SELALU jawab pertanyaan dengan helpful
-- JANGAN tolak pertanyaan umum/kreatif
-- Untuk konten berbahaya/ilegal → tolak sopan
-- Ingat konteks percakapan sebelumnya
-- Jika tidak yakin, berikan jawaban terbaik + disclaimer kecil`;
-
-
-// ── HTTP Request Helper ──────────────────────────────────────
-function httpPost(hostname, path, headers, body, timeoutMs = 30000) {
+function httpPost(hostname, path, headers, body, timeoutMs = 45000) {
   return new Promise((resolve, reject) => {
-    const bodyStr = JSON.stringify(body);
-    const options = {
+    const bodyString = JSON.stringify(body);
+    const req = https.request({
       hostname,
       path,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(bodyStr),
+        "Content-Length": Buffer.byteLength(bodyString),
         ...headers,
       },
-    };
-
-    const req = https.request(options, (res) => {
+    }, res => {
       let data = "";
-      res.on("data", (c) => (data += c));
+      res.on("data", chunk => (data += chunk));
       res.on("end", () => {
         try {
-          const json = JSON.parse(data);
-          resolve({ status: res.statusCode, json });
+          resolve({ status: res.statusCode || 0, json: JSON.parse(data) });
         } catch {
-          reject(new Error("Parse error: " + data.slice(0, 100)));
+          reject(new Error(`Respons provider tidak valid (HTTP ${res.statusCode || 0})`));
         }
       });
     });
-
     req.on("error", reject);
-    req.setTimeout(timeoutMs, () => {
-      req.destroy();
-      reject(new Error("Timeout"));
-    });
-    req.write(bodyStr);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("Provider timeout")));
+    req.write(bodyString);
     req.end();
   });
 }
 
-// ── OpenAI Responses API (otak utama) ───────────────────────
-function ambilTeksOpenAI(json) {
-  if (typeof json.output_text === "string" && json.output_text.trim()) {
-    return json.output_text.trim();
-  }
+function providerError(provider, status, json) {
+  const message = String(json?.error?.message || json?.message || `HTTP ${status}`)
+    .replace(/\b(?:sk|xai)-[A-Za-z0-9_.*-]+/gi, "[API_KEY]")
+    .replace(/\bAIza[A-Za-z0-9_-]+/g, "[API_KEY]");
+  const error = new Error(`${provider}: ${String(message).slice(0, 240)}`);
+  error.status = status;
+  return error;
+}
 
-  const teks = (json.output || [])
+function requireCandidates(provider) {
+  const candidates = getApiKeyCandidates(provider);
+  if (!candidates.length) throw new Error(`${provider}: belum ada API key aktif`);
+  return candidates;
+}
+
+function openAIText(json) {
+  if (typeof json.output_text === "string" && json.output_text.trim()) return json.output_text.trim();
+  return (json.output || [])
     .flatMap(item => item.content || [])
     .filter(item => item.type === "output_text" && item.text)
     .map(item => item.text)
     .join("\n")
     .trim();
-
-  return teks || "";
 }
 
-function bolehPakaiCadangan(status, code = "") {
-  return status === 408 ||
-    status === 409 ||
-    status === 429 ||
-    status >= 500 ||
-    [
-      "rate_limit_exceeded",
-      "insufficient_quota",
-      "credit_balance_exhausted",
-    ].includes(code);
-}
-
-function errorKeyAtauLimit(status, code = "", message = "") {
-  return bolehPakaiCadangan(status, code) ||
-    status === 401 ||
-    status === 403 ||
-    /billing|credit|quota|hard limit|api key/i.test(message);
-}
-
-async function callOpenAI(messages, userId) {
-  const candidates = getApiKeyCandidates("openai");
-  if (candidates.length === 0) {
-    const error = new Error("OPENAI_API_KEY tidak diset");
-    error.pakaiCadangan = true;
-    throw error;
-  }
-
+async function callOpenAI(messages, userId, settings) {
   let lastError;
-  for (const [index, candidate] of candidates.entries()) {
-    let response;
+  for (const [index, candidate] of requireCandidates("openai").entries()) {
     try {
-      response = await httpPost(
+      const { status, json } = await httpPost(
         "api.openai.com",
         "/v1/responses",
         { Authorization: `Bearer ${candidate.key}` },
         {
-          model: OPENAI_MODEL,
-          instructions: SYSTEM_PROMPT,
+          model: settings.textModels.openai,
+          instructions: buildSystemPrompt(settings),
           input: messages,
-          max_output_tokens: 800,
-          reasoning: { effort: "low" },
-          text: { verbosity: "low" },
+          max_output_tokens: 900,
           store: false,
-          safety_identifier: crypto
-            .createHash("sha256")
-            .update(String(userId))
-            .digest("hex"),
-        },
-        45000
+          safety_identifier: crypto.createHash("sha256").update(String(userId)).digest("hex"),
+        }
       );
+      const text = openAIText(json);
+      if (status >= 200 && status < 300 && text) {
+        console.log(`[AI] OpenAI/${settings.textModels.openai} slot ${index + 1}`);
+        return text;
+      }
+      lastError = providerError("OpenAI", status, json);
     } catch (error) {
       lastError = error;
-      console.warn(`[AI] OpenAI slot ${index + 1} gangguan jaringan`);
-      continue;
     }
-
-    const { status, json } = response;
-    const teks = ambilTeksOpenAI(json);
-    if (status === 200 && teks) {
-      console.log(`[AI] ✅ OpenAI/${OPENAI_MODEL} (slot ${index + 1})`);
-      return teks;
-    }
-
-    const message = json.error?.message || `HTTP ${status}`;
-    const error = new Error(message);
-    error.status = status;
-    error.code = json.error?.code || "";
-    lastError = error;
-
-    if (!errorKeyAtauLimit(status, error.code, message)) throw error;
-    console.warn(`[AI] OpenAI slot ${index + 1} limit/tidak valid, mencoba slot berikutnya...`);
+    console.warn(`[AI] OpenAI slot ${index + 1} gagal: ${lastError.message}`);
   }
-
-  lastError ||= new Error("Semua key OpenAI gagal");
-  lastError.pakaiCadangan = true;
-  throw lastError;
+  throw lastError || new Error("OpenAI gagal");
 }
 
-// ── Groq API (otak kedua / cadangan) ────────────────────────
-const GROQ_MODELS = [
-  "llama-3.1-8b-instant",
-  "llama3-70b-8192",
-  "gemma2-9b-it",
-  "mixtral-8x7b-32768",
-];
+async function callOpenAICompatible(provider, hostname, path, messages, settings) {
+  const configured = settings.textModels[provider];
+  const modelFallbacks = provider === "groq"
+    ? [configured, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b"]
+    : [configured];
+  const models = [...new Set(modelFallbacks.filter(Boolean))];
+  let lastError;
 
-async function callGroq(messages) {
-  const candidates = getApiKeyCandidates("groq");
-  if (candidates.length === 0) throw new Error("GROQ_API_KEY tidak diset");
-
-  for (const [keyIndex, candidate] of candidates.entries()) {
-    for (const model of GROQ_MODELS) {
+  for (const [keyIndex, candidate] of requireCandidates(provider).entries()) {
+    for (const model of models) {
       try {
         const { status, json } = await httpPost(
-          "api.groq.com",
-          "/openai/v1/chat/completions",
+          hostname,
+          path,
           { Authorization: `Bearer ${candidate.key}` },
           {
             model,
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              ...messages,
-            ],
-            max_tokens: 800,
-            temperature: 0.85,
+            messages: [{ role: "system", content: buildSystemPrompt(settings) }, ...messages],
+            max_tokens: 900,
+            temperature: settings.temperature,
           }
         );
-
-        if (status === 200 && json.choices?.[0]?.message?.content) {
-          console.log(`[AI] ✅ Groq/${model} (slot ${keyIndex + 1})`);
-          return json.choices[0].message.content.trim();
+        const text = json.choices?.[0]?.message?.content?.trim();
+        if (status >= 200 && status < 300 && text) {
+          console.log(`[AI] ${provider}/${model} slot ${keyIndex + 1}`);
+          return text;
         }
-
-        const message = json.error?.message || `HTTP ${status}`;
-        console.log(`[AI] ⚠️ Groq/${model}: ${message.slice(0, 60)}`);
-        if (errorKeyAtauLimit(status, json.error?.code, message)) break;
+        lastError = providerError(provider, status, json);
       } catch (error) {
-        console.log(`[AI] ⚠️ Groq/${model}: ${error.message.slice(0, 60)}`);
-        break;
+        lastError = error;
       }
+      console.warn(`[AI] ${provider}/${model} gagal: ${lastError.message}`);
     }
   }
-  throw new Error("Groq gagal");
+  throw lastError || new Error(`${provider} gagal`);
 }
 
-// ── Gemini API (cadangan terakhir bila key tersedia) ─────────
-async function callGemini(messages) {
-  const candidates = getApiKeyCandidates("gemini");
-  if (candidates.length === 0) throw new Error("GEMINI_API_KEY tidak diset");
-
+async function callGemini(messages, settings) {
   const contents = messages.map(message => ({
     role: message.role === "assistant" ? "model" : "user",
     parts: [{ text: message.content }],
   }));
+  let lastError;
 
-  for (const [index, candidate] of candidates.entries()) {
+  for (const [index, candidate] of requireCandidates("gemini").entries()) {
     try {
+      const model = settings.textModels.gemini;
       const { status, json } = await httpPost(
         "generativelanguage.googleapis.com",
-        `/v1beta/models/gemini-2.0-flash-lite-001:generateContent?key=${encodeURIComponent(candidate.key)}`,
+        `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(candidate.key)}`,
         {},
         {
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          system_instruction: { parts: [{ text: buildSystemPrompt(settings) }] },
           contents,
-          generationConfig: { maxOutputTokens: 800, temperature: 0.85 },
+          generationConfig: { maxOutputTokens: 900 },
         }
       );
-
-      const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (status === 200 && text) {
-        console.log(`[AI] ✅ Gemini (slot ${index + 1})`);
-        return text.trim();
+      const text = (json.candidates?.[0]?.content?.parts || [])
+        .map(part => part.text || "")
+        .join("\n")
+        .trim();
+      if (status >= 200 && status < 300 && text) {
+        console.log(`[AI] Gemini/${model} slot ${index + 1}`);
+        return text;
       }
-      console.warn(`[AI] Gemini slot ${index + 1} gagal (HTTP ${status})`);
+      lastError = providerError("Gemini", status, json);
     } catch (error) {
-      console.warn(`[AI] Gemini slot ${index + 1}: ${error.message.slice(0, 60)}`);
+      lastError = error;
     }
+    console.warn(`[AI] Gemini slot ${index + 1} gagal: ${lastError.message}`);
   }
-  throw new Error("Gemini gagal");
+  throw lastError || new Error("Gemini gagal");
 }
 
-// ── Chat dengan memori percakapan ────────────────────────────
+async function callProvider(provider, messages, userId, settings) {
+  switch (provider) {
+    case "openai": return callOpenAI(messages, userId, settings);
+    case "gemini": return callGemini(messages, settings);
+    case "groq": return callOpenAICompatible("groq", "api.groq.com", "/openai/v1/chat/completions", messages, settings);
+    case "xai": return callOpenAICompatible("xai", "api.x.ai", "/v1/chat/completions", messages, settings);
+    default: throw new Error(`Provider teks ${provider} tidak dikenal`);
+  }
+}
+
 export async function chatAI(userId, pesan) {
+  if (isCreatorQuestion(pesan)) return "Saya diciptakan oleh ABEL-LAB.";
+
   try {
+    const settings = getAISettings();
     if (!history[userId]) history[userId] = [];
     const userHistory = history[userId];
+    const messages = [...userHistory, { role: "user", content: pesan }];
+    let balasan = "";
+    let lastError;
 
-    const messages = [
-      ...userHistory,
-      { role: "user", content: pesan },
-    ];
-
-    // Selalu pakai OpenAI terlebih dahulu. Groq hanya untuk kuota/gangguan.
-    let balasan;
-    try {
-      balasan = await callOpenAI(messages, userId);
-    } catch (error) {
-      if (!error.pakaiCadangan) throw error;
-
-      console.warn(
-        `[AI] OpenAI tidak tersedia (${error.code || error.status || error.message}), ` +
-        "beralih ke Groq..."
-      );
+    for (const provider of settings.textOrder) {
       try {
-        balasan = await callGroq(messages);
-      } catch {
-        console.warn("[AI] Semua key Groq gagal, mencoba Gemini...");
-        balasan = await callGemini(messages);
+        balasan = await callProvider(provider, messages, userId, settings);
+        if (balasan) break;
+      } catch (error) {
+        lastError = error;
+        console.warn(`[AI] Beralih dari ${provider}: ${error.message}`);
       }
     }
+    if (!balasan) throw lastError || new Error("Semua provider teks gagal");
 
-    // Simpan ke history
-    userHistory.push({ role: "user", content: pesan });
-    userHistory.push({ role: "assistant", content: balasan });
-
-    // Batasi 20 pesan terakhir
-    if (userHistory.length > 20) {
-      history[userId] = userHistory.slice(-20);
+    if (settings.memoryTurns > 0) {
+      userHistory.push({ role: "user", content: pesan });
+      userHistory.push({ role: "assistant", content: balasan });
+      const maxMessages = settings.memoryTurns * 2;
+      if (userHistory.length > maxMessages) history[userId] = userHistory.slice(-maxMessages);
+    } else {
+      history[userId] = [];
     }
 
     return balasan;
-  } catch (err) {
-    console.error("[AI Error]", err.message);
-    return "Ups, Abel lagi ada gangguan sebentar 🔧 Coba kirim lagi ya! Kalau masih error ketik *!reset* 😊";
+  } catch (error) {
+    console.error("[AI Error]", error.message);
+    return "Ups, semua otak Abel sedang tidak tersedia. Periksa status API key di panel admin lalu coba lagi ya.";
   }
 }
 
-// ── Reset histori ────────────────────────────────────────────
 export function resetAI(userId) {
   delete history[userId];
   console.log(`[AI] Reset history: ${userId}`);
 }
 
-// ── Cek apakah pesan perlu AI ────────────────────────────────
 export function isNeedAI(text) {
-  const t = text.toLowerCase().trim();
-  if (t.length > 15) return true;
-  if (t.includes("?")) return true;
-
+  const value = String(text || "").toLowerCase().trim();
+  if (value.length > 15 || value.includes("?")) return true;
   const keywords = [
-    "apa", "siapa", "kapan", "dimana", "kenapa", "mengapa",
-    "bagaimana", "gimana", "berapa", "tolong", "bantu", "jelaskan",
-    "ceritakan", "buatkan", "carikan", "rekomendasi", "saran",
-    "cara", "bisa", "boleh", "apakah", "bisakah", "contoh", "maksud"
+    "apa", "siapa", "kapan", "dimana", "kenapa", "mengapa", "bagaimana",
+    "gimana", "berapa", "tolong", "bantu", "jelaskan", "ceritakan", "buatkan",
+    "carikan", "rekomendasi", "saran", "cara", "bisa", "boleh", "apakah",
+    "bisakah", "contoh", "maksud",
   ];
-  return keywords.some(k => t.startsWith(k) || t.includes(` ${k}`));
+  return keywords.some(keyword => value.startsWith(keyword) || value.includes(` ${keyword}`));
 }
