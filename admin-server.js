@@ -372,6 +372,8 @@ app.get("/api/stats", (req, res) => {
 
 // Serve admin panel
 app.get("/", (req, res) => {
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(req.get("user-agent") || "");
+  if (isMobile && req.query.full !== "1") return res.redirect("/m");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
