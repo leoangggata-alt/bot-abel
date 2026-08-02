@@ -363,7 +363,14 @@ async function callProvider(provider, messages, userId, settings, image = null, 
 }
 
 export async function chatAI(userId, pesan, options = {}) {
-  if (isCreatorQuestion(pesan)) return "Saya diciptakan oleh ABEL-LAB.";
+  // Memori grup dapat memuat percakapan lama tentang identitas. Hanya
+  // pertanyaan aktif pengguna yang boleh memicu jawaban identitas khusus.
+  const activeRequest = String(pesan).startsWith("PERMINTAAN AKTIF PENGGUNA:\n")
+    ? String(pesan)
+      .split("\n\nMEMORI PERSISTEN GRUP\n")[0]
+      .replace("PERMINTAAN AKTIF PENGGUNA:\n", "")
+    : pesan;
+  if (isCreatorQuestion(activeRequest)) return "Saya diciptakan oleh ABEL-LAB.";
 
   try {
     const settings = getAISettings();

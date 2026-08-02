@@ -13,6 +13,7 @@ data/api-keys.json
 data/ai-settings.json
 data/.api-key-secret
 data/group-cache.json
+data/group-memory.json
 data/broadcast-jobs/
 data/bot-profiles.json
 data/bot-status.json

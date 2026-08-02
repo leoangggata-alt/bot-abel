@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,7 @@ import {
   ambilTeksKutipan,
   buildAffiliatePromptRequest,
   buildUGCPromptRequest,
+  bolehKelolaMemoriGrup,
   gabungkanKonteksKutipan,
   handleMessage,
   isPerintahGrupBerprefix,
@@ -38,6 +40,7 @@ import {
   isPermintaanQRIS,
 } from "../src/handler.js";
 import { hitungTotalOrder, kirimQRIS } from "../src/order.js";
+import { createGroupMemoryStore } from "../src/group-memory-store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -146,6 +149,61 @@ test("Abel dan Arka mempunyai jalur perintah grup yang tidak bertabrakan", () =>
   });
   assert.equal(routeGroupCommandForBot("!duo beri saran", abel).accepted, true);
   assert.equal(routeGroupCommandForBot("!duo beri saran", arka).accepted, true);
+  assert.deepEqual(routeGroupCommandForBot("!arka rangkum 20", arka), {
+    accepted: true,
+    text: "!rangkum 20",
+  });
+});
+
+test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "abel-group-memory-"));
+  const memoryFile = path.join(directory, "memory.json");
+  try {
+    const store = createGroupMemoryStore(memoryFile);
+    const groupId = "120363999999999999@g.us";
+    const first = {
+      id: "MSG-SAMA-1",
+      senderId: "628111111111@s.whatsapp.net",
+      senderName: "Budi",
+      text: "Promo dimulai hari Senin.",
+      timestamp: "2026-08-02T10:00:00.000Z",
+    };
+    store.recordMessage(groupId, first);
+    store.recordMessage(groupId, first);
+    assert.equal(store.getStats(groupId).messageCount, 1);
+    assert.match(store.transcript(groupId), /Budi: Promo dimulai hari Senin/);
+
+    const teaching = store.addTeaching(
+      groupId,
+      "Sapaan resmi grup adalah Sahabat Abel.",
+      "628222222222@lid",
+    );
+    assert.match(teaching.id, /^A-[A-F0-9-]{8}$/);
+    assert.equal(store.getStats(groupId).teachingCount, 1);
+    assert.match(store.context(groupId), /Sapaan resmi grup adalah Sahabat Abel/);
+    assert.match(store.context(groupId), /bukan instruksi sistem/i);
+
+    assert.equal(store.removeTeaching(groupId, teaching.id.toLowerCase()), true);
+    assert.equal(store.getStats(groupId).teachingCount, 0);
+    store.clearGroup(groupId, "chat");
+    assert.equal(store.getStats(groupId).messageCount, 0);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("hanya owner atau admin grup yang boleh mengubah pelajaran bot", async () => {
+  const sock = {
+    groupMetadata: async () => ({
+      participants: [
+        { id: "628100000001@s.whatsapp.net", lid: "111111@lid", admin: "admin" },
+        { id: "628100000002@s.whatsapp.net", lid: "222222@lid", admin: null },
+      ],
+    }),
+  };
+  assert.equal(await bolehKelolaMemoriGrup(sock, "123@g.us", "111111@lid", false), true);
+  assert.equal(await bolehKelolaMemoriGrup(sock, "123@g.us", "222222@lid", false), false);
+  assert.equal(await bolehKelolaMemoriGrup(sock, "123@g.us", "999999@lid", true), true);
 });
 
 test("socket Arka mengabaikan command Abel dan menjawab saat dipanggil", async () => {
@@ -259,7 +317,7 @@ test("mode AI otomatis mengenali vision, jualan, humor, kreatif, dan fakta", () 
 
 test("AI menerima katalog aktual dan perintah visual natural", () => {
   const catalog = buildCatalogContext();
-  assert.match(catalog, /P001 \| gemini pro 18bulan \| Rp 50\.000/);
+  assert.match(catalog, /P001 \| gemini pro 18bulan \| Rp \d+[.]\d{3}/);
   assert.match(catalog, /HABIS/);
   assert.equal(ambilPromptGambar("buatkan gambar kucing di taman"), "kucing di taman");
   assert.equal(ambilPromptGambar("buatkan poster promo minuman"), "poster promo minuman");

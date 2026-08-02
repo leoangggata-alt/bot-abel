@@ -68,7 +68,7 @@ Berikut daftar perintah yang tersedia:
 ├ ${PREFIX}affiliate [produk] - Prompt konten jualan lengkap
 └ ${PREFIX}reset - Reset percakapan AI
 
-${isGrup ? `*👥 FITUR GRUP*\n├ ${PREFIX}tagall - Tag semua anggota\n├ ${PREFIX}rules - Peraturan grup\n└ ${PREFIX}link - Info link grup\n\n` : ""}*Contoh:* ${PREFIX}ai Berapa harga produk A?
+${isGrup ? `*👥 FITUR GRUP*\n├ ${PREFIX}rangkum 50 - Ringkas chat terbaru\n├ ${PREFIX}memori - Lihat status memori\n├ ${PREFIX}ajar [pelajaran] - Ajari bot (admin)\n├ ${PREFIX}lupa [ID/chat/ajaran] - Hapus memori (admin)\n├ ${PREFIX}tagall - Tag semua anggota\n├ ${PREFIX}rules - Peraturan grup\n└ ${PREFIX}link - Info link grup\n\n` : ""}*Contoh:* ${PREFIX}ai Berapa harga produk A?
 
 _Ditenagai oleh Google Gemini AI_ ✨`;
 }
