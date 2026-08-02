@@ -274,6 +274,11 @@ test("perintah duo dapat dijawab satu kali oleh masing-masing bot", async () => 
 test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
   assert.equal(normalizePhoneNumber("081234567890"), "6281234567890");
   assert.equal(DEFAULT_BOT_PROFILES.arka.linkMethod, "qr");
+  assert.equal(DEFAULT_BOT_PROFILES.arka.temperature, 0.55);
+  assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /hubungan sebab-akibat/i);
+  assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /langkah pelaksanaan berurutan/i);
+  assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /chat grup lama yang relevan/i);
+  assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /sesuaikan nada, panjang, format, dan kedalaman/i);
   const sharedSettings = {
     customInstruction: "Jawab akurat.",
     botProfile: {
