@@ -17,8 +17,8 @@ const IMAGE_PROVIDERS = [
 const VISION_PROVIDERS = ["openai", "gemini", "groq", "xai"];
 
 export const DEFAULT_AI_SETTINGS = Object.freeze({
-  textOrder: ["groq", "gemini", "openai", "xai"],
-  visionOrder: ["openai", "gemini", "groq", "xai"],
+  textOrder: ["gemini", "groq", "openai", "xai"],
+  visionOrder: ["gemini", "openai", "groq", "xai"],
   imageOrder: ["gemini", "openai", "xai", "seadream", "leonardo", "pollinations"],
   memoryTurns: 16,
   temperature: 0.8,

@@ -278,7 +278,12 @@ function candidatesForAttempt(provider) {
   if (!candidates.length) {
     throw new Error(`${provider}: semua slot API key sedang dalam jeda otomatis`);
   }
-  const maxAttempts = provider === "gemini" ? 3 : MAX_KEYS_PER_PROVIDER_ATTEMPT;
+  // Gemini adalah otak utama: coba seluruh slot aktif secara berurutan.
+  // Slot berikutnya baru dipakai ketika slot sebelumnya gagal/kena kuota,
+  // kemudian provider cadangan hanya dipanggil bila semua slot tak tersedia.
+  const maxAttempts = provider === "gemini"
+    ? candidates.length
+    : MAX_KEYS_PER_PROVIDER_ATTEMPT;
   if (candidates.length <= maxAttempts) return candidates;
   const start = candidateCursor.get(provider) || 0;
   const rotated = candidates.map((_, offset) => candidates[(start + offset) % candidates.length]);

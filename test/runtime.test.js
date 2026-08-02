@@ -78,7 +78,8 @@ test("total pesanan sama dengan harga barang tanpa ongkir", () => {
 });
 
 test("pengaturan panel dinormalisasi dengan aman", () => {
-  assert.deepEqual(DEFAULT_AI_SETTINGS.textOrder, ["groq", "gemini", "openai", "xai"]);
+  assert.deepEqual(DEFAULT_AI_SETTINGS.textOrder, ["gemini", "groq", "openai", "xai"]);
+  assert.deepEqual(DEFAULT_AI_SETTINGS.visionOrder, ["gemini", "openai", "groq", "xai"]);
   const settings = normalizeAISettings({
     textOrder: "xai,openai,xai,bukan-provider",
     imageOrder: ["gemini", "openai", "pollinations"],
