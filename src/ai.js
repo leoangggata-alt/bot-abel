@@ -16,6 +16,7 @@ const candidateCursor = new Map();
 const MAX_KEYS_PER_PROVIDER_ATTEMPT = 2;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
+const ORDERS_FILE = path.join(__dirname, "../data/orders.json");
 
 function formatRp(value) {
   return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
@@ -64,6 +65,75 @@ export function detectAIMode(text = "", hasImage = false) {
 export function needsCatalogContext(text = "") {
   const value = String(text).toLowerCase();
   return /\b(?:harga|stok|katalog|pricelist|price list|kode produk|produk (?:yang )?(?:ready|tersedia)|rekomendasi produk|beli produk|order produk)\b/.test(value);
+}
+
+export function needsStoreActivityContext(text = "") {
+  const value = String(text).toLowerCase();
+  const asksActivity = /\b(?:jualan|penjualan|order|pesanan|pembeli|transaksi)\b/.test(value);
+  const asksCurrentState = /\b(?:hari ini|sekarang|rame|ramai|sepi|berapa|masuk|laku)\b/.test(value);
+  return asksActivity && asksCurrentState;
+}
+
+function jakartaDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function orderDateKey(order = {}) {
+  const value = String(order.waktu || order.createdAt || "");
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const localized = value.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (localized) {
+    return `${localized[3]}-${localized[2].padStart(2, "0")}-${localized[1].padStart(2, "0")}`;
+  }
+  return "";
+}
+
+export function summarizeStoreActivity(orders = [], dateKey = jakartaDateKey()) {
+  const today = Array.isArray(orders)
+    ? orders.filter(order => orderDateKey(order) === dateKey)
+    : [];
+  const statuses = today.reduce((counts, order) => {
+    const status = String(order.status || "Belum diketahui").trim().slice(0, 60);
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+  const completed = today.filter(order => String(order.status).toLowerCase() === "selesai");
+  const statusText = Object.entries(statuses)
+    .map(([status, count]) => `${status}: ${count}`)
+    .join(", ") || "belum ada";
+  return `DATA OPERASIONAL TOKO HARI INI (${dateKey}, WIB):\n- Pesanan tercatat: ${today.length}\n- Status: ${statusText}\n- Pesanan selesai: ${completed.length}\nRingkasan ini tidak memuat data pribadi atau nilai pendapatan.`;
+}
+
+function buildStoreActivityReply(botProfile = {}) {
+  try {
+    const storedOrders = JSON.parse(fs.readFileSync(ORDERS_FILE, "utf8"));
+    const orders = Array.isArray(storedOrders) ? storedOrders : [];
+    const dateKey = jakartaDateKey();
+    const today = orders.filter(order => orderDateKey(order) === dateKey);
+    const completed = today.filter(order => String(order.status).toLowerCase() === "selesai").length;
+    const waiting = today.length - completed;
+    const facts = `hari ini tercatat ${today.length} pesanan: ${completed} selesai dan ${waiting} masih diproses/menunggu`;
+    const assessment = today.length === 0
+      ? "Jadi memang belum ada transaksi yang tercatat hari ini."
+      : "Sudah ada aktivitas, tetapi untuk menyebutnya ramai atau sepi tetap perlu dibandingkan dengan target harian.";
+    if (botProfile.id === "arka") {
+      return `Data realnya, ${facts}. ${assessment} Itu jawaban paling jujur—nggak pakai ngarang angka, Bos. 😎`;
+    }
+    return `Aku cek datanya ya, sayang: ${facts}. ${assessment} Tenang, kita lihat datanya dulu baru bikin kesimpulan, biar nggak asal manis di mulut aja. 😄`;
+  } catch (error) {
+    console.warn(`[AI] Data aktivitas toko tidak dapat dibaca: ${error.message}`);
+    return botProfile.id === "arka"
+      ? "Data penjualan sedang belum bisa gue baca, jadi gue nggak akan nebak ramai atau sepi. Coba cek lagi sebentar, Bos."
+      : "Maaf ya, sayang, data penjualannya sedang belum bisa kubaca. Aku nggak mau asal bilang ramai atau sepi. 😅";
+  }
 }
 
 function effectiveTemperature(settings, mode) {
@@ -208,11 +278,12 @@ function candidatesForAttempt(provider) {
   if (!candidates.length) {
     throw new Error(`${provider}: semua slot API key sedang dalam jeda otomatis`);
   }
-  if (candidates.length <= MAX_KEYS_PER_PROVIDER_ATTEMPT) return candidates;
+  const maxAttempts = provider === "gemini" ? 3 : MAX_KEYS_PER_PROVIDER_ATTEMPT;
+  if (candidates.length <= maxAttempts) return candidates;
   const start = candidateCursor.get(provider) || 0;
   const rotated = candidates.map((_, offset) => candidates[(start + offset) % candidates.length]);
-  candidateCursor.set(provider, (start + MAX_KEYS_PER_PROVIDER_ATTEMPT) % candidates.length);
-  return rotated.slice(0, MAX_KEYS_PER_PROVIDER_ATTEMPT);
+  candidateCursor.set(provider, (start + maxAttempts) % candidates.length);
+  return rotated.slice(0, maxAttempts);
 }
 
 function cooldownDuration(error) {
@@ -336,6 +407,20 @@ function openAIText(json) {
     .trim();
 }
 
+export function isUsableAIResponse(value) {
+  const text = String(value || "").trim();
+  if (text.length < 12) return false;
+  if (/greetings if direct context fits|system prompt|developer instruction|internal instruction/i.test(text)) {
+    return false;
+  }
+  const boldMarkers = text.match(/\*\*/g) || [];
+  const codeFences = text.match(/```/g) || [];
+  if (boldMarkers.length % 2 !== 0 || codeFences.length % 2 !== 0) return false;
+  if (/\n?\s*\d+[.)]\s*(?:\*\*)?\s*$/.test(text)) return false;
+  if (text.length < 80 && !/[.!?…:]|\p{Extended_Pictographic}/u.test(text)) return false;
+  return true;
+}
+
 async function callOpenAI(messages, userId, settings, image = null, maxOutputTokens = 1200) {
   const model = image ? settings.visionModels.openai : settings.textModels.openai;
   let lastError;
@@ -356,12 +441,14 @@ async function callOpenAI(messages, userId, settings, image = null, maxOutputTok
         18000,
       );
       const text = openAIText(json);
-      if (status >= 200 && status < 300 && text) {
+      if (status >= 200 && status < 300 && isUsableAIResponse(text)) {
         candidateCooldowns.delete(`openai:${candidate.id}`);
         console.log(`[AI] OpenAI/${model}${image ? " vision" : ""} slot ${index + 1}`);
         return text;
       }
-      lastError = providerError("OpenAI", status, json);
+      lastError = status >= 200 && status < 300
+        ? new Error("OpenAI: jawaban kosong, terpotong, atau tidak layak")
+        : providerError("OpenAI", status, json);
     } catch (error) {
       lastError = error;
     }
@@ -409,13 +496,15 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
           provider === "groq" ? 18000 : 20000,
         );
         const text = json.choices?.[0]?.message?.content?.trim();
-        if (status >= 200 && status < 300 && text) {
+        if (status >= 200 && status < 300 && isUsableAIResponse(text)) {
           candidateCooldowns.delete(`${provider}:${candidate.id}`);
           modelCooldowns.delete(`${provider}:${candidate.id}:${model}`);
           console.log(`[AI] ${provider}/${model}${image ? " vision" : ""} slot ${keyIndex + 1}`);
           return text;
         }
-        lastError = providerError(provider, status, json);
+        lastError = status >= 200 && status < 300
+          ? new Error(`${provider}: jawaban kosong, terpotong, atau tidak layak`)
+          : providerError(provider, status, json);
       } catch (error) {
         lastError = error;
       }
@@ -458,12 +547,14 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
         .map(part => part.text || "")
         .join("\n")
         .trim();
-      if (status >= 200 && status < 300 && text) {
+      if (status >= 200 && status < 300 && isUsableAIResponse(text)) {
         candidateCooldowns.delete(`gemini:${candidate.id}`);
         console.log(`[AI] Gemini/${model}${image ? " vision" : ""} slot ${index + 1}`);
         return text;
       }
-      lastError = providerError("Gemini", status, json);
+      lastError = status >= 200 && status < 300
+        ? new Error("Gemini: jawaban kosong, terpotong, atau tidak layak")
+        : providerError("Gemini", status, json);
     } catch (error) {
       lastError = error;
     }
@@ -488,6 +579,9 @@ export async function chatAI(userId, pesan, options = {}) {
   // pertanyaan aktif pengguna yang boleh memicu jawaban identitas khusus.
   const activeRequest = extractActiveRequest(pesan);
   if (isCreatorQuestion(activeRequest)) return "Saya diciptakan oleh ABEL-LAB.";
+  if (needsStoreActivityContext(activeRequest)) {
+    return buildStoreActivityReply(options.profile || {});
+  }
 
   try {
     const settings = getAISettings();

@@ -12,7 +12,10 @@ import {
   detectAIMode,
   extractActiveRequest,
   isCreatorQuestion,
+  isUsableAIResponse,
   needsCatalogContext,
+  needsStoreActivityContext,
+  summarizeStoreActivity,
   normalizeVisionInput,
 } from "../src/ai.js";
 import { DEFAULT_AI_SETTINGS, normalizeAISettings } from "../src/ai-settings.js";
@@ -223,6 +226,13 @@ test("permintaan aktif dipisahkan dari memori agar riwayat AI tidak membengkak",
   assert.equal(extractActiveRequest(envelope), "Jelaskan dengan akurat.");
 });
 
+test("jawaban provider yang terpotong atau membocorkan instruksi ditolak", () => {
+  assert.equal(isUsableAIResponse("greetings if direct context fits.\n\n3. **"), false);
+  assert.equal(isUsableAIResponse("Langkah pertama yang paling masuk akal"), false);
+  assert.equal(isUsableAIResponse("Cek data transaksi hari ini dulu, lalu bandingkan dengan kemarin."), true);
+  assert.equal(isUsableAIResponse("Siap, Bos! 😎"), true);
+});
+
 test("hanya owner atau admin grup yang boleh mengubah pelajaran bot", async () => {
   const sock = {
     groupMetadata: async () => ({
@@ -360,6 +370,34 @@ test("katalog hanya dimuat saat pertanyaan benar-benar membutuhkan produk", () =
   const withoutCatalog = buildSystemPrompt({ includeCatalog: false });
   assert.doesNotMatch(withoutCatalog, /P001 \| gemini pro/i);
   assert.match(withoutCatalog, /Katalog tidak dilampirkan/i);
+});
+
+test("pertanyaan penjualan hari ini memakai ringkasan transaksi nyata", () => {
+  assert.equal(needsStoreActivityContext("jualan hari ini rame kah?"), true);
+  assert.equal(needsStoreActivityContext("buat caption jualan"), false);
+  const summary = summarizeStoreActivity([
+    { waktu: "02/08/2026, 10.15.00", status: "Selesai", total: 50000 },
+    { waktu: "02/08/2026, 11.00.00", status: "Menunggu Verifikasi", total: 45000 },
+    { waktu: "01/08/2026, 09.00.00", status: "Selesai", total: 7000 },
+  ], "2026-08-02");
+  assert.match(summary, /Pesanan tercatat: 2/);
+  assert.match(summary, /Selesai: 1/);
+  assert.match(summary, /Menunggu Verifikasi: 1/);
+  assert.doesNotMatch(summary, /Rp|pendapatan:|50\.000/i);
+  assert.doesNotMatch(summary, /senderNum|nomor|pelanggan/i);
+});
+
+test("pertanyaan aktivitas toko dijawab lokal tanpa halusinasi provider", async () => {
+  const abelReply = await chatAI("uji-aktivitas-abel", "jualan hari ini rame kah?", {
+    profile: DEFAULT_BOT_PROFILES.abel,
+  });
+  const arkaReply = await chatAI("uji-aktivitas-arka", "penjualan sekarang berapa?", {
+    profile: DEFAULT_BOT_PROFILES.arka,
+  });
+  assert.match(abelReply, /hari ini tercatat \d+ pesanan/i);
+  assert.match(abelReply, /sayang|manis/i);
+  assert.match(arkaReply, /hari ini tercatat \d+ pesanan/i);
+  assert.match(arkaReply, /Bos|Data realnya/i);
 });
 
 test("AI menerima katalog aktual dan perintah visual natural", () => {
