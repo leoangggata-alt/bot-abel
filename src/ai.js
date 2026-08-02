@@ -10,6 +10,9 @@ import { getAISettings } from "./ai-settings.js";
 dotenv.config();
 
 const history = {};
+const candidateCooldowns = new Map();
+const candidateCursor = new Map();
+const MAX_KEYS_PER_PROVIDER_ATTEMPT = 2;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
 
@@ -126,7 +129,7 @@ export function isCreatorQuestion(text = "") {
   return (asksWho && creatorWords && refersToBot) || /\bkamu dibuat oleh siapa\b/.test(value);
 }
 
-function httpPost(hostname, path, headers, body, timeoutMs = 45000) {
+function httpPost(hostname, path, headers, body, timeoutMs = 18000) {
   return new Promise((resolve, reject) => {
     const bodyString = JSON.stringify(body);
     const req = https.request({
@@ -169,6 +172,60 @@ function requireCandidates(provider) {
   const candidates = getApiKeyCandidates(provider);
   if (!candidates.length) throw new Error(`${provider}: belum ada API key aktif`);
   return candidates;
+}
+
+function candidatesForAttempt(provider) {
+  const now = Date.now();
+  const candidates = requireCandidates(provider).filter(candidate => {
+    const cooldownKey = `${provider}:${candidate.id}`;
+    const remaining = (candidateCooldowns.get(cooldownKey) || 0) - now;
+    if (remaining <= 0) {
+      candidateCooldowns.delete(cooldownKey);
+      return true;
+    }
+    return false;
+  });
+  if (!candidates.length) {
+    throw new Error(`${provider}: semua slot API key sedang dalam jeda otomatis`);
+  }
+  if (candidates.length <= MAX_KEYS_PER_PROVIDER_ATTEMPT) return candidates;
+  const start = candidateCursor.get(provider) || 0;
+  const rotated = candidates.map((_, offset) => candidates[(start + offset) % candidates.length]);
+  candidateCursor.set(provider, (start + MAX_KEYS_PER_PROVIDER_ATTEMPT) % candidates.length);
+  return rotated.slice(0, MAX_KEYS_PER_PROVIDER_ATTEMPT);
+}
+
+function cooldownDuration(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (/request too large|terlalu besar|context length|token.*limit/.test(message)) return 0;
+  if (/no credits|billing|insufficient_quota|unauthorized|invalid api key|http 401|http 403/.test(message)) {
+    return 30 * 60 * 1000;
+  }
+  if (/belum ada api key/.test(message)) return 5 * 60 * 1000;
+  if (/quota|rate.?limit|http 429/.test(message)) return 2 * 60 * 1000;
+  if (/timeout|high demand|overloaded/.test(message)) return 45 * 1000;
+  return 15 * 1000;
+}
+
+function putCandidateOnCooldown(provider, candidate, error) {
+  const duration = cooldownDuration(error);
+  if (duration > 0) {
+    candidateCooldowns.set(`${provider}:${candidate.id}`, Date.now() + duration);
+  }
+}
+
+export function extractActiveRequest(pesan = "") {
+  const value = String(pesan);
+  if (!value.startsWith("PERMINTAAN AKTIF PENGGUNA:\n")) return value;
+  return value
+    .split("\n\nMEMORI PERSISTEN GRUP\n")[0]
+    .replace("PERMINTAAN AKTIF PENGGUNA:\n", "");
+}
+
+function compactHistoryText(value, maxLength = 1600) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 80)}\n[Isi panjang dipadatkan dari riwayat]`;
 }
 
 export function normalizeVisionInput(image) {
@@ -239,7 +296,7 @@ function openAIText(json) {
 async function callOpenAI(messages, userId, settings, image = null, maxOutputTokens = 1200) {
   const model = image ? settings.visionModels.openai : settings.textModels.openai;
   let lastError;
-  for (const [index, candidate] of requireCandidates("openai").entries()) {
+  for (const [index, candidate] of candidatesForAttempt("openai").entries()) {
     try {
       const { status, json } = await httpPost(
         "api.openai.com",
@@ -252,10 +309,12 @@ async function callOpenAI(messages, userId, settings, image = null, maxOutputTok
           max_output_tokens: maxOutputTokens,
           store: false,
           safety_identifier: crypto.createHash("sha256").update(String(userId)).digest("hex"),
-        }
+        },
+        18000,
       );
       const text = openAIText(json);
       if (status >= 200 && status < 300 && text) {
+        candidateCooldowns.delete(`openai:${candidate.id}`);
         console.log(`[AI] OpenAI/${model}${image ? " vision" : ""} slot ${index + 1}`);
         return text;
       }
@@ -263,6 +322,7 @@ async function callOpenAI(messages, userId, settings, image = null, maxOutputTok
     } catch (error) {
       lastError = error;
     }
+    putCandidateOnCooldown("openai", candidate, lastError);
     console.warn(`[AI] OpenAI slot ${index + 1} gagal: ${lastError.message}`);
   }
   throw lastError || new Error("OpenAI gagal");
@@ -273,12 +333,12 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
   const modelFallbacks = image
     ? [configured]
     : provider === "groq"
-    ? [configured, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b"]
+    ? [configured, "llama-3.3-70b-versatile", "openai/gpt-oss-20b", "llama-3.1-8b-instant"]
     : [configured];
   const models = [...new Set(modelFallbacks.filter(Boolean))];
   let lastError;
 
-  for (const [keyIndex, candidate] of requireCandidates(provider).entries()) {
+  for (const [keyIndex, candidate] of candidatesForAttempt(provider).entries()) {
     for (const model of models) {
       try {
         const { status, json } = await httpPost(
@@ -293,10 +353,12 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
             ],
             max_tokens: maxOutputTokens,
             temperature: settings.temperature,
-          }
+          },
+          provider === "groq" ? 18000 : 20000,
         );
         const text = json.choices?.[0]?.message?.content?.trim();
         if (status >= 200 && status < 300 && text) {
+          candidateCooldowns.delete(`${provider}:${candidate.id}`);
           console.log(`[AI] ${provider}/${model}${image ? " vision" : ""} slot ${keyIndex + 1}`);
           return text;
         }
@@ -306,6 +368,7 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
       }
       console.warn(`[AI] ${provider}/${model} gagal: ${lastError.message}`);
     }
+    putCandidateOnCooldown(provider, candidate, lastError);
   }
   throw lastError || new Error(`${provider} gagal`);
 }
@@ -322,7 +385,7 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
   }));
   let lastError;
 
-  for (const [index, candidate] of requireCandidates("gemini").entries()) {
+  for (const [index, candidate] of candidatesForAttempt("gemini").entries()) {
     try {
       const model = image ? settings.visionModels.gemini : settings.textModels.gemini;
       const { status, json } = await httpPost(
@@ -333,13 +396,15 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
           system_instruction: { parts: [{ text: buildSystemPrompt(settings) }] },
           contents,
           generationConfig: { maxOutputTokens },
-        }
+        },
+        15000,
       );
       const text = (json.candidates?.[0]?.content?.parts || [])
         .map(part => part.text || "")
         .join("\n")
         .trim();
       if (status >= 200 && status < 300 && text) {
+        candidateCooldowns.delete(`gemini:${candidate.id}`);
         console.log(`[AI] Gemini/${model}${image ? " vision" : ""} slot ${index + 1}`);
         return text;
       }
@@ -347,6 +412,7 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
     } catch (error) {
       lastError = error;
     }
+    putCandidateOnCooldown("gemini", candidate, lastError);
     console.warn(`[AI] Gemini slot ${index + 1} gagal: ${lastError.message}`);
   }
   throw lastError || new Error("Gemini gagal");
@@ -365,25 +431,25 @@ async function callProvider(provider, messages, userId, settings, image = null, 
 export async function chatAI(userId, pesan, options = {}) {
   // Memori grup dapat memuat percakapan lama tentang identitas. Hanya
   // pertanyaan aktif pengguna yang boleh memicu jawaban identitas khusus.
-  const activeRequest = String(pesan).startsWith("PERMINTAAN AKTIF PENGGUNA:\n")
-    ? String(pesan)
-      .split("\n\nMEMORI PERSISTEN GRUP\n")[0]
-      .replace("PERMINTAAN AKTIF PENGGUNA:\n", "")
-    : pesan;
+  const activeRequest = extractActiveRequest(pesan);
   if (isCreatorQuestion(activeRequest)) return "Saya diciptakan oleh ABEL-LAB.";
 
   try {
     const settings = getAISettings();
     const botProfile = options.profile || null;
     const image = normalizeVisionInput(options.image || null);
-    const mode = detectAIMode(pesan, Boolean(image));
+    const mode = detectAIMode(activeRequest, Boolean(image));
     const profileTemperature = Number(botProfile?.temperature);
+    const optionMemoryTurns = Number(options.memoryTurns);
+    const profileMemoryTurns = Number(botProfile?.memoryTurns);
     const runtimeSettings = {
       ...settings,
       botProfile,
-      memoryTurns: Number.isFinite(Number(botProfile?.memoryTurns))
-        ? Number(botProfile.memoryTurns)
-        : settings.memoryTurns,
+      memoryTurns: Number.isFinite(optionMemoryTurns)
+        ? Math.min(50, Math.max(0, optionMemoryTurns))
+        : Number.isFinite(profileMemoryTurns)
+          ? Math.min(50, Math.max(0, profileMemoryTurns))
+          : settings.memoryTurns,
       temperature: effectiveTemperature({
         ...settings,
         temperature: Number.isFinite(profileTemperature)
@@ -391,13 +457,17 @@ export async function chatAI(userId, pesan, options = {}) {
           : settings.temperature,
       }, mode),
     };
-    const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(pesan);
-    const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(pesan);
+    const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(activeRequest);
+    const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(activeRequest);
     const requestedMax = Number(options.maxOutputTokens || (isLongFormMarketing ? 5000 : wantsDetailedAnswer ? 3200 : 1800));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     const memoryKey = `${botProfile?.id || "abel"}:${userId}`;
     if (!history[memoryKey]) history[memoryKey] = [];
-    const userHistory = history[memoryKey];
+    const maxHistoryMessages = runtimeSettings.memoryTurns * 2;
+    const userHistory = maxHistoryMessages > 0
+      ? history[memoryKey].slice(-maxHistoryMessages)
+      : [];
+    history[memoryKey] = userHistory;
     const providerPrompt = image
       ? `INSTRUKSI AKURASI VISUAL: Periksa gambar sebelum menjawab. Jangan menebak atau melengkapi detail yang tidak terlihat. Untuk teks, angka, QR, nota, dan identitas, tulis hanya yang benar-benar terbaca. Jika tidak cukup jelas, katakan tidak terbaca/tidak yakin.\n\nPERMINTAAN PENGGUNA:\n${pesan}`
       : pesan;
@@ -420,9 +490,11 @@ export async function chatAI(userId, pesan, options = {}) {
     if (runtimeSettings.memoryTurns > 0) {
       userHistory.push({
         role: "user",
-        content: image ? `[Pengguna mengirim gambar] ${pesan}` : pesan,
+        content: compactHistoryText(
+          image ? `[Pengguna mengirim gambar] ${activeRequest}` : activeRequest,
+        ),
       });
-      userHistory.push({ role: "assistant", content: balasan });
+      userHistory.push({ role: "assistant", content: compactHistoryText(balasan) });
       const maxMessages = runtimeSettings.memoryTurns * 2;
       if (userHistory.length > maxMessages) history[memoryKey] = userHistory.slice(-maxMessages);
     } else {

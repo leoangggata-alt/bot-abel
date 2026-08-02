@@ -10,10 +10,11 @@ import {
   buildSystemPrompt,
   chatAI,
   detectAIMode,
+  extractActiveRequest,
   isCreatorQuestion,
   normalizeVisionInput,
 } from "../src/ai.js";
-import { normalizeAISettings } from "../src/ai-settings.js";
+import { DEFAULT_AI_SETTINGS, normalizeAISettings } from "../src/ai-settings.js";
 import {
   formatGroupBroadcastMessage,
   sendBroadcastToGroups,
@@ -73,6 +74,7 @@ test("total pesanan sama dengan harga barang tanpa ongkir", () => {
 });
 
 test("pengaturan panel dinormalisasi dengan aman", () => {
+  assert.deepEqual(DEFAULT_AI_SETTINGS.textOrder, ["groq", "gemini", "openai", "xai"]);
   const settings = normalizeAISettings({
     textOrder: "xai,openai,xai,bukan-provider",
     imageOrder: ["gemini", "openai", "pollinations"],
@@ -173,6 +175,24 @@ test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", (
     assert.equal(store.getStats(groupId).messageCount, 1);
     assert.match(store.transcript(groupId), /Budi: Promo dimulai hari Senin/);
 
+    store.recordMessage(groupId, {
+      ...first,
+      id: "MSG-LAMA-MERPATI",
+      text: "Kode proyek MERPATI disepakati untuk peluncuran toko.",
+    });
+    for (let index = 0; index < 25; index += 1) {
+      store.recordMessage(groupId, {
+        ...first,
+        id: `MSG-BARU-${index}`,
+        text: `Obrolan terbaru nomor ${index} tentang kegiatan harian.`,
+      });
+    }
+    const relevantContext = store.context(groupId, {
+      query: "Apa kode proyek peluncuran toko?",
+    });
+    assert.match(relevantContext, /MERPATI/);
+    assert.ok(relevantContext.length <= 6000);
+
     const teaching = store.addTeaching(
       groupId,
       "Sapaan resmi grup adalah Sahabat Abel.",
@@ -190,6 +210,11 @@ test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", (
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("permintaan aktif dipisahkan dari memori agar riwayat AI tidak membengkak", () => {
+  const envelope = "PERMINTAAN AKTIF PENGGUNA:\nJelaskan dengan akurat.\n\nMEMORI PERSISTEN GRUP\n- data lama";
+  assert.equal(extractActiveRequest(envelope), "Jelaskan dengan akurat.");
 });
 
 test("hanya owner atau admin grup yang boleh mengubah pelajaran bot", async () => {
