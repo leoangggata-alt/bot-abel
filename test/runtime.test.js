@@ -12,6 +12,7 @@ import {
   detectAIMode,
   extractActiveRequest,
   isCreatorQuestion,
+  needsCatalogContext,
   normalizeVisionInput,
 } from "../src/ai.js";
 import { DEFAULT_AI_SETTINGS, normalizeAISettings } from "../src/ai-settings.js";
@@ -155,6 +156,11 @@ test("Abel dan Arka mempunyai jalur perintah grup yang tidak bertabrakan", () =>
     accepted: true,
     text: "!rangkum 20",
   });
+  assert.deepEqual(routeGroupCommandForBot("! Arka apa kabar?", arka), {
+    accepted: true,
+    text: "!ai apa kabar?",
+  });
+  assert.equal(routeGroupCommandForBot("! Arka apa kabar?", abel).accepted, false);
 });
 
 test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", () => {
@@ -191,7 +197,7 @@ test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", (
       query: "Apa kode proyek peluncuran toko?",
     });
     assert.match(relevantContext, /MERPATI/);
-    assert.ok(relevantContext.length <= 6000);
+    assert.ok(relevantContext.length <= 4500);
 
     const teaching = store.addTeaching(
       groupId,
@@ -213,7 +219,7 @@ test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", (
 });
 
 test("permintaan aktif dipisahkan dari memori agar riwayat AI tidak membengkak", () => {
-  const envelope = "PERMINTAAN AKTIF PENGGUNA:\nJelaskan dengan akurat.\n\nMEMORI PERSISTEN GRUP\n- data lama";
+  const envelope = "MEMORI PERSISTEN GRUP\n- data lama\n\nPERMINTAAN AKTIF PENGGUNA:\nJelaskan dengan akurat.\n\nATURAN JAWABAN AKTIF:\nJawab langsung.";
   assert.equal(extractActiveRequest(envelope), "Jelaskan dengan akurat.");
 });
 
@@ -279,6 +285,9 @@ test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
   assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /langkah pelaksanaan berurutan/i);
   assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /chat grup lama yang relevan/i);
   assert.match(DEFAULT_BOT_PROFILES.arka.customInstruction, /sesuaikan nada, panjang, format, dan kedalaman/i);
+  assert.match(DEFAULT_BOT_PROFILES.arka.personality, /gaul, cerdas, tegas/i);
+  assert.match(DEFAULT_BOT_PROFILES.abel.personality, /romantis, manis, ceria, lucu/i);
+  assert.match(DEFAULT_BOT_PROFILES.abel.customInstruction, /jawab inti pertanyaan terlebih dahulu/i);
   const sharedSettings = {
     customInstruction: "Jawab akurat.",
     botProfile: {
@@ -343,6 +352,14 @@ test("mode AI otomatis mengenali vision, jualan, humor, kreatif, dan fakta", () 
   assert.equal(detectAIMode("buat lelucon lucu"), "humor");
   assert.equal(detectAIMode("tulis cerita pendek"), "creative");
   assert.equal(detectAIMode("jelaskan mengapa langit biru"), "factual");
+});
+
+test("katalog hanya dimuat saat pertanyaan benar-benar membutuhkan produk", () => {
+  assert.equal(needsCatalogContext("berapa harga produk P001 dan stoknya?"), true);
+  assert.equal(needsCatalogContext("jualan hari ini ramai tidak?"), false);
+  const withoutCatalog = buildSystemPrompt({ includeCatalog: false });
+  assert.doesNotMatch(withoutCatalog, /P001 \| gemini pro/i);
+  assert.match(withoutCatalog, /Katalog tidak dilampirkan/i);
 });
 
 test("AI menerima katalog aktual dan perintah visual natural", () => {

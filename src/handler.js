@@ -212,14 +212,13 @@ export function routeGroupCommandForBot(text = "", botProfile = DEFAULT_BOT_PROF
 
   const profileId = botProfile.id || "abel";
   const commandName = String(botProfile.command || profileId).toLowerCase();
-  const lower = value.toLowerCase();
-  const ownPrefix = `${PREFIX}${commandName}`;
-  const isOwnAddress = lower === ownPrefix || lower.startsWith(`${ownPrefix} `);
-  const isDuoAddress = lower === `${PREFIX}duo` || lower.startsWith(`${PREFIX}duo `);
+  const commandBody = value.slice(PREFIX.length).trimStart();
+  const addressedName = commandBody.match(/^(abel|arka|duo)\b/i)?.[1]?.toLowerCase() || "";
+  const isOwnAddress = addressedName === commandName;
+  const isDuoAddress = addressedName === "duo";
 
   if (isOwnAddress || isDuoAddress) {
-    const address = isDuoAddress ? `${PREFIX}duo` : ownPrefix;
-    const request = value.slice(address.length).trim();
+    const request = commandBody.slice(addressedName.length).trim();
     if (!request) {
       return {
         accepted: true,
@@ -235,10 +234,7 @@ export function routeGroupCommandForBot(text = "", botProfile = DEFAULT_BOT_PROF
     };
   }
 
-  if (lower === `${PREFIX}abel` || lower.startsWith(`${PREFIX}abel `)) {
-    return { accepted: false, text: value };
-  }
-  if (lower === `${PREFIX}arka` || lower.startsWith(`${PREFIX}arka `)) {
+  if (["abel", "arka"].includes(addressedName)) {
     return { accepted: false, text: value };
   }
 

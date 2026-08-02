@@ -11,6 +11,7 @@ dotenv.config();
 
 const history = {};
 const candidateCooldowns = new Map();
+const modelCooldowns = new Map();
 const candidateCursor = new Map();
 const MAX_KEYS_PER_PROVIDER_ATTEMPT = 2;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,12 +61,29 @@ export function detectAIMode(text = "", hasImage = false) {
   return "general";
 }
 
+export function needsCatalogContext(text = "") {
+  const value = String(text).toLowerCase();
+  return /\b(?:harga|stok|katalog|pricelist|price list|kode produk|produk (?:yang )?(?:ready|tersedia)|rekomendasi produk|beli produk|order produk)\b/.test(value);
+}
+
 function effectiveTemperature(settings, mode) {
   const configured = Number(settings.temperature);
   const base = Number.isFinite(configured) ? configured : 0.8;
   if (mode === "vision" || mode === "factual") return Math.min(base, 0.4);
   if (mode === "sales") return Math.min(base, 0.65);
   return base;
+}
+
+function defaultOutputTokens(mode) {
+  switch (mode) {
+    case "humor": return 650;
+    case "general": return 750;
+    case "sales": return 1000;
+    case "factual": return 1400;
+    case "vision": return 1800;
+    case "creative": return 2200;
+    default: return 1200;
+  }
 }
 
 export function buildSystemPrompt(settings) {
@@ -81,7 +99,11 @@ export function buildSystemPrompt(settings) {
   const custom = extraInstructions
     ? `\n\n## INSTRUKSI TAMBAHAN ADMIN\n${extraInstructions}`
     : "";
-  const catalog = buildCatalogContext();
+  const includeCatalog = settings.includeCatalog !== false;
+  const catalog = includeCatalog ? buildCatalogContext() : "";
+  const catalogSection = includeCatalog
+    ? `## KATALOG TOKO AKTUAL\n${catalog}\n\nGunakan katalog ini sebagai satu-satunya sumber harga dan stok toko.`
+    : "## KATALOG TOKO\nKatalog tidak dilampirkan karena pertanyaan aktif tidak membutuhkan harga atau stok. Jika pengguna kemudian meminta harga/stok, arahkan ke !harga atau jawab pada permintaan berikutnya dengan katalog aktual.";
   return `Kamu adalah ${botName}, asisten AI serbaguna yang cerdas dan berjalan di WhatsApp.
 
 ## IDENTITAS
@@ -108,17 +130,15 @@ export function buildSystemPrompt(settings) {
 - Ingat konteks percakapan yang diberikan.
 - Di grup, anggota memberi pertanyaan dan perintah melalui pesan berprefix !. Ikuti perintah yang aman dan masih dalam kemampuan bot.
 - Untuk konten affiliate/jualan/UGC, buat keluaran yang siap pakai: hook, skrip, dialog persis, shot list, caption, CTA, hashtag, prompt visual Nano Banana, prompt video Google Flow/Veo per klip, audio, dan negative prompt. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
-- Saat berjualan, gunakan hanya katalog aktual di bawah. Sebut harga, stok, manfaat dari deskripsi, rekomendasi yang sesuai kebutuhan, CTA yang natural, dan format order !order KODE JUMLAH. Produk HABIS tidak boleh ditawarkan sebagai ready stock. Jika kode duplikat, jangan menebak; minta pengguna memilih nama produk dan arahkan admin memperbaiki kode.
+- Saat pengguna meminta harga, stok, katalog, atau rekomendasi produk, gunakan hanya katalog aktual yang disediakan. Sebut harga, stok, manfaat dari deskripsi, CTA yang natural, dan format order !order KODE JUMLAH. Produk HABIS tidak boleh ditawarkan sebagai ready stock. Jika kode duplikat, jangan menebak.
+- Jawab pertanyaan aktif terlebih dahulu dan pertahankan topiknya. Memori, katalog, serta riwayat hanya konteks pendukung; abaikan bagian yang tidak relevan. Jangan memberi sapaan generik atau template kosong ketika pengguna sudah mengajukan pertanyaan jelas.
 - Boleh bercanda, membuat lelucon, tebak-tebakan, atau balasan santai. Tetap ramah, tidak merendahkan identitas seseorang, tidak mempermalukan, dan kembali serius saat pengguna membutuhkan bantuan.
 - Untuk hitungan, cek angka dan satuan. Tampilkan rumus singkat bila itu membantu pengguna memeriksa hasil.
 - Jika diminta membuat gambar, jangan hanya memberi prompt; sistem bot akan menangani generator gambar sebelum chat ini.
 - Tolak secara sopan permintaan berbahaya atau ilegal.
 - Jika informasi penting belum ada, ajukan paling banyak satu pertanyaan klarifikasi. Jika masih bisa dikerjakan dengan asumsi aman, tulis asumsi lalu lanjutkan.
 
-## KATALOG TOKO AKTUAL
-${catalog}
-
-Gunakan katalog ini sebagai satu-satunya sumber harga dan stok toko.${custom}`;
+${catalogSection}${custom}`;
 }
 
 export function isCreatorQuestion(text = "") {
@@ -197,7 +217,9 @@ function candidatesForAttempt(provider) {
 
 function cooldownDuration(error) {
   const message = String(error?.message || "").toLowerCase();
-  if (/request too large|terlalu besar|context length|token.*limit/.test(message)) return 0;
+  if (/request too large|terlalu besar|context length|please reduce your message/.test(message)) return 0;
+  if (/tokens per day|\btpd\b/.test(message)) return 30 * 60 * 1000;
+  if (/tokens per minute|\btpm\b/.test(message)) return 30 * 1000;
   if (/no credits|billing|insufficient_quota|unauthorized|invalid api key|http 401|http 403/.test(message)) {
     return 30 * 60 * 1000;
   }
@@ -214,12 +236,33 @@ function putCandidateOnCooldown(provider, candidate, error) {
   }
 }
 
+function modelCooldownRemaining(provider, candidate, model) {
+  const key = `${provider}:${candidate.id}:${model}`;
+  const remaining = (modelCooldowns.get(key) || 0) - Date.now();
+  if (remaining <= 0) {
+    modelCooldowns.delete(key);
+    return 0;
+  }
+  return remaining;
+}
+
+function putModelOnCooldown(provider, candidate, model, error) {
+  const duration = cooldownDuration(error);
+  if (duration > 0) {
+    modelCooldowns.set(`${provider}:${candidate.id}:${model}`, Date.now() + duration);
+  }
+}
+
 export function extractActiveRequest(pesan = "") {
   const value = String(pesan);
-  if (!value.startsWith("PERMINTAAN AKTIF PENGGUNA:\n")) return value;
+  const marker = "PERMINTAAN AKTIF PENGGUNA:\n";
+  const markerIndex = value.lastIndexOf(marker);
+  if (markerIndex < 0) return value;
   return value
+    .slice(markerIndex + marker.length)
+    .split("\n\nATURAN JAWABAN AKTIF:\n")[0]
     .split("\n\nMEMORI PERSISTEN GRUP\n")[0]
-    .replace("PERMINTAAN AKTIF PENGGUNA:\n", "");
+    .trim();
 }
 
 function compactHistoryText(value, maxLength = 1600) {
@@ -337,9 +380,18 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
     : [configured];
   const models = [...new Set(modelFallbacks.filter(Boolean))];
   let lastError;
+  let attemptedAnyModel = false;
 
   for (const [keyIndex, candidate] of candidatesForAttempt(provider).entries()) {
+    let attemptedCandidateModel = false;
     for (const model of models) {
+      const remaining = modelCooldownRemaining(provider, candidate, model);
+      if (remaining > 0) {
+        console.log(`[AI] ${provider}/${model} dilewati (${Math.ceil(remaining / 1000)} detik)`);
+        continue;
+      }
+      attemptedAnyModel = true;
+      attemptedCandidateModel = true;
       try {
         const { status, json } = await httpPost(
           hostname,
@@ -359,6 +411,7 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
         const text = json.choices?.[0]?.message?.content?.trim();
         if (status >= 200 && status < 300 && text) {
           candidateCooldowns.delete(`${provider}:${candidate.id}`);
+          modelCooldowns.delete(`${provider}:${candidate.id}:${model}`);
           console.log(`[AI] ${provider}/${model}${image ? " vision" : ""} slot ${keyIndex + 1}`);
           return text;
         }
@@ -366,10 +419,12 @@ async function callOpenAICompatible(provider, hostname, path, messages, settings
       } catch (error) {
         lastError = error;
       }
+      putModelOnCooldown(provider, candidate, model, lastError);
       console.warn(`[AI] ${provider}/${model} gagal: ${lastError.message}`);
     }
-    putCandidateOnCooldown(provider, candidate, lastError);
+    if (attemptedCandidateModel) putCandidateOnCooldown(provider, candidate, lastError);
   }
+  if (!attemptedAnyModel) throw new Error(`${provider}: semua model sedang dalam jeda otomatis`);
   throw lastError || new Error(`${provider} gagal`);
 }
 
@@ -445,6 +500,7 @@ export async function chatAI(userId, pesan, options = {}) {
     const runtimeSettings = {
       ...settings,
       botProfile,
+      includeCatalog: needsCatalogContext(activeRequest),
       memoryTurns: Number.isFinite(optionMemoryTurns)
         ? Math.min(50, Math.max(0, optionMemoryTurns))
         : Number.isFinite(profileMemoryTurns)
@@ -459,7 +515,9 @@ export async function chatAI(userId, pesan, options = {}) {
     };
     const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(activeRequest);
     const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(activeRequest);
-    const requestedMax = Number(options.maxOutputTokens || (isLongFormMarketing ? 5000 : wantsDetailedAnswer ? 3200 : 1800));
+    const requestedMax = Number(options.maxOutputTokens || (
+      isLongFormMarketing ? 5000 : wantsDetailedAnswer ? 3200 : defaultOutputTokens(mode)
+    ));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     const memoryKey = `${botProfile?.id || "abel"}:${userId}`;
     if (!history[memoryKey]) history[memoryKey] = [];
