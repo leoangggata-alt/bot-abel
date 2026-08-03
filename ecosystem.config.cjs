@@ -1,6 +1,8 @@
 const path = require("path");
 const fs = require("fs");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+// .env adalah sumber konfigurasi utama. Override mencegah PM2 mempertahankan
+// nilai owner/API lama setelah file konfigurasi diperbarui.
+require("dotenv").config({ path: path.join(__dirname, ".env"), override: true });
 
 const logsDir = path.join(__dirname, "logs");
 fs.mkdirSync(logsDir, { recursive: true });
