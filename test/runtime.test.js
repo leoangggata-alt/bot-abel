@@ -43,6 +43,7 @@ import {
   ambilTeksKutipan,
   buildAffiliatePromptRequest,
   buildUGCPromptRequest,
+  downloadGambarWhatsApp,
   isVerifiedOwnerSender,
   isOwnerIdentityQuestion,
   bolehKelolaMemoriGrup,
@@ -698,6 +699,13 @@ test("gambar langsung, gambar kutipan, dan konteks reply dikenali", () => {
   assert.equal(ambilPesanGambar(replied).source, "quoted");
   assert.equal(ambilTeksKutipan(replied), "nota belanja");
   assert.match(gabungkanKonteksKutipan("jelaskan", "pesan lama"), /pesan lama/);
+});
+
+test("gambar kutipan tanpa media key meminta pengguna mengirim ulang", async () => {
+  await assert.rejects(
+    () => downloadGambarWhatsApp({ mimetype: "image/jpeg" }),
+    error => error.code === "MEDIA_KEY_UNAVAILABLE",
+  );
 });
 
 test("format chat WhatsApp umum terbaca", () => {

@@ -586,7 +586,8 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
             maxOutputTokens,
             // Chat WhatsApp membutuhkan jawaban langsung. Budget 0 mencegah
             // token habis di proses thinking lalu menghasilkan teks kosong.
-            thinkingConfig: { thinkingBudget: 0 },
+            // Vision Gemini menolak thinkingBudget=0 sebagai INVALID_ARGUMENT.
+            ...(image ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
           },
         },
         8000,

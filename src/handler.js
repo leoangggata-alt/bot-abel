@@ -296,6 +296,11 @@ export function routeGroupCommandForBot(text = "", botProfile = DEFAULT_BOT_PROF
 }
 
 export async function downloadGambarWhatsApp(imageMessage) {
+  if (!imageMessage?.mediaKey || (!imageMessage?.directPath && !imageMessage?.url)) {
+    const error = new Error("Media gambar kutipan sudah tidak tersedia dari WhatsApp");
+    error.code = "MEDIA_KEY_UNAVAILABLE";
+    throw error;
+  }
   const stream = await downloadContentFromMessage(imageMessage, "image");
   const chunks = [];
   let total = 0;
@@ -479,9 +484,10 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
         );
       } catch (error) {
         console.error("[VISION] Gagal membaca gambar:", error.message);
+        const unavailable = error?.code === "MEDIA_KEY_UNAVAILABLE" || /empty media key/i.test(error?.message || "");
         await kirim(sock, from, isGrup
-          ? `@${senderNum} maaf, gambar itu belum berhasil dibaca. Coba kirim ulang sebagai JPG/PNG.`
-          : "Maaf, gambar belum berhasil dibaca. Coba kirim ulang sebagai JPG/PNG.", isGrup ? [senderId] : []);
+          ? `@${senderNum} ${unavailable ? "gambar reply itu sudah tidak dapat diunduh dari WhatsApp. Kirim ulang fotonya secara langsung dengan caption *!analisis jelaskan gambar ini*." : "maaf, gambar itu belum berhasil dianalisis. Coba kirim ulang sebagai JPG/PNG."}`
+          : unavailable ? "Gambar reply itu sudah tidak dapat diunduh dari WhatsApp. Kirim ulang fotonya secara langsung dengan caption pertanyaan." : "Maaf, gambar belum berhasil dianalisis. Coba kirim ulang sebagai JPG/PNG.", isGrup ? [senderId] : []);
       }
       return;
     }
