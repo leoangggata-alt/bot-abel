@@ -6,7 +6,7 @@ import fs from "fs";
 import { downloadContentFromMessage } from "@whiskeysockets/baileys";
 dotenv.config();
 
-import { chatAI, resetAI } from "./ai.js";
+import { chatAI, isCreatorQuestion, resetAI } from "./ai.js";
 import { kirimGambar } from "./image.js";
 import {
   prosesOrder,
@@ -42,6 +42,7 @@ const OWNER = process.env.OWNER_NUMBER;
 const AUTO_READ = process.env.AUTO_READ !== "false";
 const AUTO_TYPING = process.env.AUTO_TYPING !== "false";
 const ANTI_SPAM = process.env.ANTI_SPAM !== "false";
+const CREATOR_PHOTO_FILE = new URL("../assets/creator-abel-lab.jpg", import.meta.url);
 const DEFAULT_BOT_PROFILE = {
   id: "abel",
   name: "Abel",
@@ -83,6 +84,43 @@ export function ambilPromptGambar(teks = "") {
     }
   }
   return "";
+}
+
+function nomorDariJid(value = "") {
+  return String(value).replace(/@(?:s\.whatsapp\.net|lid)$/i, "").split(":")[0].replace(/\D/g, "");
+}
+
+export function isVerifiedOwnerSender(key = {}, isGroup = false, ownerNumber = OWNER) {
+  const configured = nomorDariJid(ownerNumber);
+  if (!configured) return false;
+  const candidates = isGroup
+    ? [key.participantPn, key.senderPn, key.participant]
+    : [key.senderPn, key.remoteJid];
+  return candidates.some(value => nomorDariJid(value) === configured);
+}
+
+async function kirimIdentitasPencipta(sock, to, mentions = []) {
+  const ownerName = process.env.OWNER_NAME || "ABEL-LAB";
+  const contact = nomorDariJid(OWNER);
+  const caption = [
+    "👑 *PENCIPTA ABEL & ARKA*",
+    "",
+    "Kedua bot ini diciptakan dan dikembangkan oleh *ABEL-LAB*.",
+    `Nama owner: *${ownerName}*`,
+    contact ? `Kontak resmi: https://wa.me/${contact}` : "",
+    "",
+    "Foto ini adalah foto pencipta yang ditetapkan oleh owner.",
+  ].filter(Boolean).join("\n");
+  if (fs.existsSync(CREATOR_PHOTO_FILE)) {
+    await sock.sendMessage(to, {
+      image: fs.readFileSync(CREATOR_PHOTO_FILE),
+      mimetype: "image/jpeg",
+      caption,
+      mentions,
+    });
+    return;
+  }
+  await kirim(sock, to, caption, mentions);
 }
 
 export function isPermintaanPromptAffiliate(teks = "") {
@@ -303,8 +341,8 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
 
     // Fix: WhatsApp baru pakai @lid, bukan hanya @s.whatsapp.net
     const senderId = isGrup
-      ? (key.participant || "")
-      : from;
+      ? (key.participantPn || key.senderPn || key.participant || "")
+      : (key.senderPn || from);
     const askAI = (prompt, options = {}) => chatAI(senderId, isGrup
       ? injectGroupMemory(from, prompt)
       : prompt, {
@@ -318,7 +356,7 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
       .replace("@lid", "")
       .split(":")[0] || "";
 
-    const isOwner = senderNum === OWNER;
+    const isOwner = isVerifiedOwnerSender(key, isGrup);
     const isBotMsg = key.fromMe;
     const imageInfo = ambilPesanGambar(message);
     const quotedText = ambilTeksKutipan(message);
@@ -385,6 +423,11 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
       sock.sendPresenceUpdate("composing", from).catch((err) => {
         console.warn(`[AUTO_TYPING] dilewati: ${err?.message || err}`);
       });
+    }
+
+    if (isCreatorQuestion(trimTeks)) {
+      await kirimIdentitasPencipta(sock, from, isGrup ? [senderId] : []);
+      return;
     }
 
     // Gambar langsung selalu dianalisis. Gambar kutipan dianalisis saat anggota

@@ -43,6 +43,7 @@ import {
   ambilTeksKutipan,
   buildAffiliatePromptRequest,
   buildUGCPromptRequest,
+  isVerifiedOwnerSender,
   bolehKelolaMemoriGrup,
   gabungkanKonteksKutipan,
   handleMessage,
@@ -81,6 +82,33 @@ test("penyimpanan produk atomik memulihkan backup saat file utama rusak", () => 
 test("identitas pencipta selalu ABEL-LAB tanpa memanggil provider", async () => {
   assert.equal(isCreatorQuestion("Siapa yang menciptakan kamu?"), true);
   assert.equal(await chatAI("test-user", "kamu dibuat oleh siapa?"), "Saya diciptakan oleh ABEL-LAB.");
+});
+
+test("kontak owner dikenali dari nomor WhatsApp dan pertanyaan pencipta mengirim foto", async () => {
+  assert.equal(isVerifiedOwnerSender({
+    remoteJid: "999999999@lid",
+    senderPn: "628123456789@s.whatsapp.net",
+  }, false, "628123456789"), true);
+  assert.equal(isVerifiedOwnerSender({
+    remoteJid: "120363000000000000@g.us",
+    participant: "999999999@lid",
+    participantPn: "628123456789@s.whatsapp.net",
+  }, true, "628123456789"), true);
+
+  const sent = [];
+  const sock = {
+    user: { id: "628216035841:1@s.whatsapp.net" },
+    readMessages: async () => {},
+    sendPresenceUpdate: async () => {},
+    sendMessage: async (to, content) => sent.push({ to, content }),
+  };
+  await handleMessage(sock, {
+    key: { remoteJid: "628999999999@s.whatsapp.net", fromMe: false, id: "CREATOR-PHOTO-1" },
+    message: { conversation: "siapa yang menciptakan kamu?" },
+  });
+  assert.equal(sent.length, 1);
+  assert.ok(Buffer.isBuffer(sent[0].content.image));
+  assert.match(sent[0].content.caption, /ABEL-LAB/);
 });
 
 test("permintaan QRIS natural dikenali", () => {
