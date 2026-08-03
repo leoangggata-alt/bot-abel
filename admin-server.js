@@ -24,6 +24,8 @@ import {
   getGroupDirectory,
   listBroadcastJobs,
   MAX_ACTIVE_BROADCASTS,
+  MAX_BROADCAST_IMAGE_BYTES,
+  saveBroadcastImage,
 } from "./src/broadcast-store.js";
 import {
   formatBroadcastDraft,
@@ -327,6 +329,21 @@ app.get("/api/broadcast/groups", (req, res) => {
 
 app.get("/api/broadcast/jobs", (req, res) => {
   res.json({ jobs: listBroadcastJobs(req.query.limit) });
+});
+
+app.post("/api/broadcast/media", express.raw({
+  type: ["image/jpeg", "image/png", "image/webp"],
+  limit: MAX_BROADCAST_IMAGE_BYTES,
+}), (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      return res.status(400).json({ error: "Pilih foto yang akan diunggah" });
+    }
+    const media = saveBroadcastImage(req.body, req.get("content-type"), req.get("x-file-name"));
+    return res.status(201).json({ success: true, media });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message });
+  }
 });
 
 function prepareBroadcastPayload(input) {

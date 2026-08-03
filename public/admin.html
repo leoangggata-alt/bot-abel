@@ -373,6 +373,10 @@
     .broadcast-preview { margin-top: 16px; border: 1px solid rgba(16,185,129,.25); background: rgba(16,185,129,.06); border-radius: 10px; padding: 14px; }
     .broadcast-preview-label { color: var(--success); font-size: 10px; font-weight: 800; letter-spacing: .8px; margin-bottom: 8px; }
     .broadcast-preview-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #dbeafe; }
+    .broadcast-image-box { display:flex; align-items:center; gap:12px; padding:12px; border:1px dashed var(--border); border-radius:10px; background:var(--surface2); }
+    .broadcast-image-box input { font-size:12px; min-width:0; }
+    .broadcast-image-preview { display:none; margin-top:10px; }
+    .broadcast-image-preview img { width:100%; max-height:280px; object-fit:contain; border-radius:10px; background:#080b12; }
     .broadcast-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 18px; }
     .broadcast-note { color: var(--text-muted); font-size: 11px; line-height: 1.5; flex: 1; }
     .broadcast-job-list { padding: 14px; display: grid; gap: 10px; max-height: 650px; overflow: auto; }
@@ -687,7 +691,17 @@
               </div>
             </div>
 
+            <div class="form-group">
+              <label for="broadcast-image">Foto Siaran (Opsional)</label>
+              <div class="broadcast-image-box">
+                <input id="broadcast-image" type="file" accept="image/jpeg,image/png,image/webp" onchange="handleBroadcastImageChange()"/>
+                <button class="btn btn-danger btn-sm" type="button" onclick="clearBroadcastImage()">Hapus</button>
+              </div>
+              <div class="broadcast-template-help">JPG, PNG, atau WEBP maksimal 5 MB. Foto dikirim bersama isi pesan sebagai caption.</div>
+            </div>
+
             <div class="broadcast-preview">
+              <div class="broadcast-image-preview" id="broadcast-image-preview"><img id="broadcast-image-preview-img" alt="Pratinjau foto siaran"/></div>
               <div class="broadcast-preview-label">PRATINJAU WHATSAPP</div>
               <div class="broadcast-preview-text" id="broadcast-preview">📢 *Bot Abel*\n\nPesan akan tampil di sini.</div>
             </div>
@@ -1800,13 +1814,25 @@
     button.disabled = true;
     button.textContent = '⏳ Memasukkan antrean...';
     try {
+      const imageFile = document.getElementById('broadcast-image')?.files?.[0] || null;
+      let mediaId = '';
+      if (imageFile) {
+        const uploadResponse = await fetch('/api/broadcast/media', {
+          method: 'POST',
+          headers: {'Content-Type': imageFile.type, 'X-File-Name': encodeURIComponent(imageFile.name)},
+          body: imageFile,
+        });
+        const upload = await parseApiResponse(uploadResponse);
+        mediaId = upload.media.id;
+      }
       const response = await fetch('/api/broadcast/jobs', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ message, templateMode, targetMode, groupIds }),
+        body: JSON.stringify({ message, templateMode, targetMode, groupIds, mediaId }),
       });
       const result = await parseApiResponse(response);
       document.getElementById('broadcast-message').value = '';
+      clearBroadcastImage();
       updateBroadcastPreview();
       showToast(`✅ Siaran ke ${result.job.total} grup masuk antrean`);
       await loadBroadcastJobs();
@@ -1816,6 +1842,32 @@
       button.disabled = false;
       button.textContent = '📤 Kirim Siaran';
     }
+  }
+
+  function handleBroadcastImageChange() {
+    const input = document.getElementById('broadcast-image');
+    const preview = document.getElementById('broadcast-image-preview');
+    const image = document.getElementById('broadcast-image-preview-img');
+    const file = input?.files?.[0];
+    if (!file) return clearBroadcastImage();
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      showToast('Foto harus JPG, PNG, atau WEBP maksimal 5 MB', 'error');
+      return clearBroadcastImage();
+    }
+    if (image.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+    image.dataset.objectUrl = URL.createObjectURL(file);
+    image.src = image.dataset.objectUrl;
+    preview.style.display = 'block';
+  }
+
+  function clearBroadcastImage() {
+    const input = document.getElementById('broadcast-image');
+    const preview = document.getElementById('broadcast-image-preview');
+    const image = document.getElementById('broadcast-image-preview-img');
+    if (image?.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+    if (image) { image.removeAttribute('src'); delete image.dataset.objectUrl; }
+    if (input) input.value = '';
+    if (preview) preview.style.display = 'none';
   }
 
   async function loadBroadcastJobs() {

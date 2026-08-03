@@ -7,12 +7,50 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "../data");
 const JOBS_DIR = path.join(DATA_DIR, "broadcast-jobs");
 const GROUP_CACHE_FILE = path.join(DATA_DIR, "group-cache.json");
+const MEDIA_DIR = path.join(DATA_DIR, "broadcast-media");
 
 export const MAX_BROADCAST_LENGTH = 4000;
 export const MAX_ACTIVE_BROADCASTS = 3;
+export const MAX_BROADCAST_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function ensureDataDirectories() {
   fs.mkdirSync(JOBS_DIR, { recursive: true });
+  fs.mkdirSync(MEDIA_DIR, { recursive: true });
+}
+
+const IMAGE_TYPES = {
+  "image/jpeg": { extension: ".jpg", matches: buffer => buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff },
+  "image/png": { extension: ".png", matches: buffer => buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) },
+  "image/webp": { extension: ".webp", matches: buffer => buffer.subarray(0, 4).toString() === "RIFF" && buffer.subarray(8, 12).toString() === "WEBP" },
+};
+
+export function saveBroadcastImage(buffer, mimeType, originalName = "gambar") {
+  ensureDataDirectories();
+  const data = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  const type = IMAGE_TYPES[String(mimeType || "").toLowerCase()];
+  if (!type || !type.matches(data)) {
+    const error = new Error("Foto harus berformat JPG, PNG, atau WEBP yang valid");
+    error.status = 400;
+    throw error;
+  }
+  if (!data.length || data.length > MAX_BROADCAST_IMAGE_BYTES) {
+    const error = new Error("Ukuran foto maksimal 5 MB");
+    error.status = 413;
+    throw error;
+  }
+  const id = crypto.randomUUID();
+  fs.writeFileSync(path.join(MEDIA_DIR, `${id}${type.extension}`), data);
+  const metadata = { id, mimeType: String(mimeType).toLowerCase(), originalName: path.basename(String(originalName || "gambar")).slice(0, 120), size: data.length, extension: type.extension };
+  writeJson(path.join(MEDIA_DIR, `${id}.json`), metadata);
+  return metadata;
+}
+
+export function readBroadcastImage(id) {
+  if (!/^[a-f0-9-]{36}$/i.test(String(id || ""))) return null;
+  const metadata = readJson(path.join(MEDIA_DIR, `${id}.json`), null);
+  if (!metadata || !IMAGE_TYPES[metadata.mimeType]) return null;
+  const file = path.join(MEDIA_DIR, `${id}${metadata.extension}`);
+  return fs.existsSync(file) ? { ...metadata, buffer: fs.readFileSync(file) } : null;
 }
 
 function readJson(file, fallback) {
@@ -113,6 +151,12 @@ export function normalizeBroadcastRequest(input, availableGroups) {
     error.status = 400;
     throw error;
   }
+  const media = input?.mediaId ? readBroadcastImage(input.mediaId) : null;
+  if (input?.mediaId && !media) {
+    const error = new Error("Foto siaran tidak ditemukan atau sudah tidak valid");
+    error.status = 400;
+    throw error;
+  }
 
   return {
     message,
@@ -120,6 +164,7 @@ export function normalizeBroadcastRequest(input, availableGroups) {
     targets,
     preformatted: input?.preformatted === true,
     templateMode: String(input?.templateMode || "custom").slice(0, 30),
+    media: media ? { id: media.id, mimeType: media.mimeType, originalName: media.originalName, size: media.size } : null,
   };
 }
 
@@ -133,6 +178,7 @@ export function createBroadcastJob(input, availableGroups) {
     message: normalized.message,
     preformatted: normalized.preformatted,
     templateMode: normalized.templateMode,
+    media: normalized.media,
     targetMode: normalized.targetMode,
     targets: normalized.targets,
     total: normalized.targets.length,

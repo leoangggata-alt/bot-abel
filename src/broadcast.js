@@ -2,6 +2,7 @@
 import dotenv from "dotenv";
 import {
   getNextBroadcastJob,
+  readBroadcastImage,
   saveGroupDirectory,
   updateBroadcastJob,
 } from "./broadcast-store.js";
@@ -38,12 +39,18 @@ export async function sendBroadcastToGroups(sock, targets, message, options = {}
   const content = options.preformatted
     ? String(message || "").trim()
     : formatGroupBroadcastMessage(message);
+  const media = options.mediaId
+    ? (typeof options.readMedia === "function" ? options.readMedia(options.mediaId) : readBroadcastImage(options.mediaId))
+    : null;
+  if (options.mediaId && !media) throw new Error("Foto siaran tidak ditemukan");
 
   for (let index = 0; index < targets.length; index += 1) {
     const target = targets[index];
     let result;
     try {
-      await sock.sendMessage(target.id, { text: content });
+      await sock.sendMessage(target.id, media
+        ? { image: media.buffer, mimetype: media.mimeType, caption: content }
+        : { text: content });
       result = {
         groupId: target.id,
         groupName: target.name,
@@ -89,6 +96,7 @@ export async function processNextBroadcastJob(sock, options = {}) {
     await sendBroadcastToGroups(sock, pendingTargets, job.message, {
       delayMs: options.delayMs,
       preformatted: job.preformatted === true,
+      mediaId: job.media?.id || "",
       onProgress: async result => {
         latest = updateBroadcastJob(job.id, current => {
           const results = [...(current.results || []), result];

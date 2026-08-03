@@ -422,6 +422,19 @@ test("siaran grup memakai socket bot dan mencatat hasil per grup", async () => {
     preformatted: true,
   });
   assert.equal(direct[0].content.text, formatted);
+
+  const image = Buffer.from([1, 2, 3]);
+  const withImage = [];
+  await sendBroadcastToGroups({
+    sendMessage: async (to, content) => withImage.push({ to, content }),
+  }, [{ id: "444@g.us", name: "Grup Empat" }], formatted, {
+    delayMs: 0,
+    preformatted: true,
+    mediaId: "test-image",
+    readMedia: () => ({ buffer: image, mimeType: "image/jpeg" }),
+  });
+  assert.deepEqual(withImage[0].content.image, image);
+  assert.equal(withImage[0].content.caption, formatted);
 });
 
 test("daftar harga singkat dirombak menjadi pengumuman premium", () => {
