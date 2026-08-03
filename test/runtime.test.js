@@ -44,6 +44,7 @@ import {
   buildAffiliatePromptRequest,
   buildUGCPromptRequest,
   isVerifiedOwnerSender,
+  isOwnerIdentityQuestion,
   bolehKelolaMemoriGrup,
   gabungkanKonteksKutipan,
   handleMessage,
@@ -109,6 +110,10 @@ test("kontak owner dikenali dari nomor WhatsApp dan pertanyaan pencipta mengirim
   assert.equal(sent.length, 1);
   assert.ok(Buffer.isBuffer(sent[0].content.image));
   assert.match(sent[0].content.caption, /ABEL-LAB/);
+  assert.equal(isOwnerIdentityQuestion("!abel aku ini siapa?"), true);
+  assert.equal(isOwnerIdentityQuestion("!arka kamu masih kenal aku?"), true);
+  assert.equal(isOwnerIdentityQuestion("siapa bosmu?"), true);
+  assert.equal(isOwnerIdentityQuestion("siapa nama anggota lain?"), false);
 });
 
 test("permintaan QRIS natural dikenali", () => {

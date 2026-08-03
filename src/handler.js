@@ -99,6 +99,14 @@ export function isVerifiedOwnerSender(key = {}, isGroup = false, ownerNumber = O
   return candidates.some(value => nomorDariJid(value) === configured);
 }
 
+export function isOwnerIdentityQuestion(text = "") {
+  const value = String(text).toLowerCase().replace(/^!\s*(?:abel|arka|ai|tanya|chat)?\s*/i, "").trim();
+  return /\b(?:aku|saya|gue|gua)\s+(?:ini\s+)?siapa\b/i.test(value) ||
+    /\b(?:kamu|kau)\s+(?:masih\s+)?(?:kenal|mengenali|ingat)\s+(?:aku|saya|gue|gua)\b/i.test(value) ||
+    /\bsiapa\s+(?:bos|owner|pencipta)(?:mu|\s+kamu)?\b/i.test(value) ||
+    /\b(?:gak|nggak|tidak)\s+kenal\s+(?:aku|saya|gue|gua)\b/i.test(value);
+}
+
 async function kirimIdentitasPencipta(sock, to, mentions = []) {
   const ownerName = process.env.OWNER_NAME || "ABEL-LAB";
   const contact = nomorDariJid(OWNER);
@@ -428,6 +436,15 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
 
     if (isCreatorQuestion(trimTeks)) {
       await kirimIdentitasPencipta(sock, from, isGrup ? [senderId] : []);
+      return;
+    }
+
+    if (isOwner && isOwnerIdentityQuestion(trimTeks)) {
+      const ownerName = process.env.OWNER_NAME || "Bos";
+      const answer = profile.id === "arka"
+        ? `Tentu gue kenal. Kamu *${ownerName}*, Bos gue—owner sekaligus pencipta *ABEL-LAB* yang menciptakan Abel dan Arka. Identitas WhatsApp kamu sudah terverifikasi oleh sistem. 👑`
+        : `Tentu aku kenal dong. Kamu *${ownerName}*, Bos sekaligus owner dan pencipta *ABEL-LAB* yang menciptakan aku dan Arka. Identitas WhatsApp kamu sudah terverifikasi. 👑💖`;
+      await kirim(sock, from, isGrup ? `@${senderNum} ${answer}` : answer, isGrup ? [senderId] : []);
       return;
     }
 
