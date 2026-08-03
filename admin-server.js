@@ -26,6 +26,10 @@ import {
   MAX_ACTIVE_BROADCASTS,
 } from "./src/broadcast-store.js";
 import {
+  formatBroadcastDraft,
+  normalizeBroadcastMode,
+} from "./src/broadcast-format.js";
+import {
   getBotProfiles,
   getBotStatuses,
   requestBotRestart,
@@ -325,6 +329,32 @@ app.get("/api/broadcast/jobs", (req, res) => {
   res.json({ jobs: listBroadcastJobs(req.query.limit) });
 });
 
+function prepareBroadcastPayload(input) {
+  const templateMode = normalizeBroadcastMode(input?.templateMode);
+  const settings = readSettings();
+  const message = formatBroadcastDraft({
+    mode: templateMode,
+    message: input?.message,
+    products: readProducts(),
+    businessName: settings.businessName || process.env.BUSINESS_NAME || "Bot Abel",
+  });
+  return {
+    ...input,
+    message,
+    templateMode,
+    preformatted: true,
+  };
+}
+
+app.post("/api/broadcast/preview", (req, res) => {
+  try {
+    const payload = prepareBroadcastPayload(req.body);
+    return res.json({ message: payload.message, templateMode: payload.templateMode });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
 app.post("/api/broadcast/jobs", (req, res) => {
   try {
     if (countActiveBroadcastJobs() >= MAX_ACTIVE_BROADCASTS) {
@@ -333,7 +363,8 @@ app.post("/api/broadcast/jobs", (req, res) => {
       });
     }
     const directory = getGroupDirectory();
-    const job = createBroadcastJob(req.body, directory.groups);
+    const payload = prepareBroadcastPayload(req.body);
+    const job = createBroadcastJob(payload, directory.groups);
     return res.status(202).json({ success: true, job });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message });

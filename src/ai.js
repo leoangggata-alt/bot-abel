@@ -22,9 +22,9 @@ function formatRp(value) {
   return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
 }
 
-export function buildCatalogContext() {
+export function buildCatalogContext(productSource = null) {
   try {
-    const products = readProducts()
+    const products = (Array.isArray(productSource) ? productSource : readProducts())
       .filter(product => product.aktif !== false)
       .slice(0, 60);
     if (!products.length) return "Katalog aktif sedang kosong.";

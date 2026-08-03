@@ -369,6 +369,7 @@
     .group-name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .group-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
     .message-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; color: var(--text-muted); font-size: 11px; }
+    .broadcast-template-help { margin-top: 7px; padding: 9px 11px; border-radius: 8px; border: 1px solid rgba(124,58,237,.22); background: rgba(124,58,237,.07); color: var(--text-muted); font-size: 11px; line-height: 1.55; }
     .broadcast-preview { margin-top: 16px; border: 1px solid rgba(16,185,129,.25); background: rgba(16,185,129,.06); border-radius: 10px; padding: 14px; }
     .broadcast-preview-label { color: var(--success); font-size: 10px; font-weight: 800; letter-spacing: .8px; margin-bottom: 8px; }
     .broadcast-preview-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #dbeafe; }
@@ -668,7 +669,17 @@
             <div class="group-picker" id="broadcast-group-picker" style="display:none"></div>
 
             <div class="form-group">
-              <label for="broadcast-message">Isi Pesan</label>
+              <label for="broadcast-template">Jenis Siaran</label>
+              <select id="broadcast-template" onchange="handleBroadcastTemplateChange()">
+                <option value="custom">Pesan biasa</option>
+                <option value="stock">Update stok otomatis dari produk</option>
+                <option value="price-list">Rapikan daftar harga menjadi premium</option>
+              </select>
+              <div class="broadcast-template-help" id="broadcast-template-help">Tulis pengumuman bebas. Bot akan menambahkan kepala pesan toko.</div>
+            </div>
+
+            <div class="form-group">
+              <label for="broadcast-message" id="broadcast-message-label">Isi Pesan</label>
               <textarea id="broadcast-message" rows="8" maxlength="4000" placeholder="Contoh: Promo spesial hari ini! Dapatkan harga terbaik sebelum stok habis." oninput="updateBroadcastPreview()"></textarea>
               <div class="message-tools">
                 <span>Format WhatsApp didukung: *tebal*, _miring_, dan baris baru.</span>
@@ -1690,22 +1701,84 @@
       getBroadcastTargetMode() === 'selected' ? 'grid' : 'none';
   }
 
+  let broadcastPreviewTimer = null;
+  let broadcastPreviewRequest = 0;
+
+  function getBroadcastTemplateMode() {
+    return document.getElementById('broadcast-template')?.value || 'custom';
+  }
+
+  function handleBroadcastTemplateChange() {
+    const mode = getBroadcastTemplateMode();
+    const input = document.getElementById('broadcast-message');
+    const label = document.getElementById('broadcast-message-label');
+    const help = document.getElementById('broadcast-template-help');
+    const settings = {
+      custom: {
+        label: 'Isi Pesan',
+        placeholder: 'Contoh: Promo spesial hari ini! Dapatkan harga terbaik sebelum stok habis.',
+        help: 'Tulis pengumuman bebas. Bot akan menambahkan kepala pesan toko.',
+      },
+      stock: {
+        label: 'Catatan Promo (opsional)',
+        placeholder: 'Contoh: Khusus hari ini beli 2 lebih hemat. Boleh dikosongkan.',
+        help: 'Nama, kode, harga, dan jumlah stok diambil otomatis dari produk aktif di panel saat siaran dikirim.',
+      },
+      'price-list': {
+        label: 'Daftar Harga Mentah',
+        placeholder: 'Gemini stok 18 harga 50000\nChatGPT stok 7 harga 75000\nCapCut stok 3 harga 15k',
+        help: 'Satu produk per baris. Bot merapikan nama, rupiah, stok, status ready, dan ajakan membeli.',
+      },
+    }[mode];
+    label.textContent = settings.label;
+    input.placeholder = settings.placeholder;
+    help.textContent = settings.help;
+    updateBroadcastPreview();
+  }
+
   function updateBroadcastPreview() {
     const input = document.getElementById('broadcast-message');
     const preview = document.getElementById('broadcast-preview');
     if (!input || !preview) return;
-    const message = input.value.trim();
-    const businessName = document.getElementById('s-business')?.value.trim() || 'Bot Abel';
     document.getElementById('broadcast-char-count').textContent = input.value.length;
-    preview.textContent = `📢 *${businessName}*\n\n${message || 'Pesan akan tampil di sini.'}`;
+    clearTimeout(broadcastPreviewTimer);
+    broadcastPreviewTimer = setTimeout(() => loadBroadcastPreview(false), 300);
+  }
+
+  async function loadBroadcastPreview(showError = false) {
+    const input = document.getElementById('broadcast-message');
+    const preview = document.getElementById('broadcast-preview');
+    const templateMode = getBroadcastTemplateMode();
+    const message = input.value.trim();
+    if (templateMode !== 'stock' && !message) {
+      preview.textContent = 'Pesan akan tampil di sini.';
+      return null;
+    }
+    const requestId = ++broadcastPreviewRequest;
+    preview.textContent = '⏳ Menyiapkan desain pengumuman...';
+    try {
+      const response = await fetch('/api/broadcast/preview', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ message, templateMode }),
+      });
+      const result = await parseApiResponse(response);
+      if (requestId === broadcastPreviewRequest) preview.textContent = result.message;
+      return result.message;
+    } catch (error) {
+      if (requestId === broadcastPreviewRequest) preview.textContent = `⚠️ ${error.message}`;
+      if (showError) showToast(`❌ ${error.message}`, 'error');
+      return null;
+    }
   }
 
   async function sendGroupBroadcast() {
     const message = document.getElementById('broadcast-message').value.trim();
+    const templateMode = getBroadcastTemplateMode();
     const targetMode = getBroadcastTargetMode();
     const groupIds = [...document.querySelectorAll('.broadcast-group-check:checked')]
       .map(input => input.value);
-    if (!message) {
+    if (templateMode !== 'stock' && !message) {
       showToast('⚠️ Isi pesan siaran terlebih dahulu', 'error');
       return;
     }
@@ -1718,6 +1791,8 @@
       return;
     }
 
+    const previewMessage = await loadBroadcastPreview(true);
+    if (!previewMessage) return;
     const targetCount = targetMode === 'all' ? broadcastGroups.length : groupIds.length;
     if (!confirm(`Kirim pesan ini ke ${targetCount} grup melalui bot?\n\nPeriksa isi pesan sebelum melanjutkan.`)) return;
 
@@ -1728,7 +1803,7 @@
       const response = await fetch('/api/broadcast/jobs', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ message, targetMode, groupIds }),
+        body: JSON.stringify({ message, templateMode, targetMode, groupIds }),
       });
       const result = await parseApiResponse(response);
       document.getElementById('broadcast-message').value = '';

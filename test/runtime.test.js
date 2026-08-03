@@ -24,6 +24,12 @@ import {
   sendBroadcastToGroups,
 } from "../src/broadcast.js";
 import { normalizeBroadcastRequest } from "../src/broadcast-store.js";
+import {
+  formatBroadcastDraft,
+  formatPriceListAnnouncement,
+  formatStockAnnouncement,
+  parseCompactPriceList,
+} from "../src/broadcast-format.js";
 import { DEFAULT_BOT_PROFILES, normalizePhoneNumber } from "../src/bot-profile-store.js";
 import { normalizeHostRole } from "../src/host-mode-store.js";
 import { buildRealisticImagePrompt, normalizeImageRequest } from "../src/image.js";
@@ -373,6 +379,50 @@ test("siaran grup memakai socket bot dan mencatat hasil per grup", async () => {
   assert.match(sent[0].content.text, /^📢/);
   assert.match(formatGroupBroadcastMessage("Promo spesial"), /Promo spesial$/);
   assert.deepEqual(results.map(result => result.status), ["success", "failed"]);
+
+  const formatted = "📢 *ABEL-LAB*\n\n✨ *UPDATE STOK*";
+  const direct = [];
+  await sendBroadcastToGroups({
+    sendMessage: async (to, content) => direct.push({ to, content }),
+  }, [{ id: "333@g.us", name: "Grup Tiga" }], formatted, {
+    delayMs: 0,
+    preformatted: true,
+  });
+  assert.equal(direct[0].content.text, formatted);
+});
+
+test("daftar harga singkat dirombak menjadi pengumuman premium", () => {
+  const parsed = parseCompactPriceList("gemini stok 18 harga 50000\ncapcut stok 3 harga 15k");
+  assert.deepEqual(parsed, [
+    { name: "Gemini", stock: 18, price: 50000 },
+    { name: "CapCut", stock: 3, price: 15000 },
+  ]);
+  const announcement = formatPriceListAnnouncement("gemini stok 18 harga 50000\ncapcut stok 3 harga 15k");
+  assert.match(announcement, /DAFTAR HARGA/);
+  assert.match(announcement, /Rp50\.000/);
+  assert.match(announcement, /Stok: \*3\* — ⚠️ TERBATAS/);
+});
+
+test("update stok mengambil harga dan jumlah langsung dari produk aktif", () => {
+  const products = [
+    { kode: "P001", nama: "Gemini Pro", harga: 45000, stok: 18, aktif: true },
+    { kode: "P002", nama: "ChatGPT Plus", harga: 75000, stok: 0, aktif: true },
+    { kode: "P003", nama: "Nonaktif", harga: 1000, stok: 9, aktif: false },
+  ];
+  const announcement = formatStockAnnouncement(products, "Promo khusus hari ini");
+  assert.match(announcement, /Gemini Pro/);
+  assert.match(announcement, /Rp45\.000/);
+  assert.match(announcement, /Stok: \*18\* — ✅ READY/);
+  assert.match(announcement, /Stok: \*0\* — ❌ HABIS/);
+  assert.doesNotMatch(announcement, /Nonaktif/);
+  assert.match(announcement, /Promo khusus hari ini/);
+
+  const finalMessage = formatBroadcastDraft({
+    mode: "stock",
+    products,
+    businessName: "ABEL-LAB",
+  });
+  assert.match(finalMessage, /^📢 \*ABEL-LAB\*/);
 });
 
 test("mode AI otomatis mengenali vision, jualan, humor, kreatif, dan fakta", () => {
@@ -420,7 +470,10 @@ test("pertanyaan aktivitas toko dijawab lokal tanpa halusinasi provider", async 
 });
 
 test("AI menerima katalog aktual dan perintah visual natural", () => {
-  const catalog = buildCatalogContext();
+  const catalog = buildCatalogContext([
+    { kode: "P001", nama: "gemini pro 18bulan", harga: 45000, stok: 14, aktif: true },
+    { kode: "P999", nama: "produk habis", harga: 10000, stok: 0, aktif: true },
+  ]);
   assert.match(catalog, /P001 \| gemini pro 18bulan \| Rp \d+[.]\d{3}/);
   assert.match(catalog, /HABIS/);
   assert.equal(ambilPromptGambar("buatkan gambar kucing di taman"), "kucing di taman");

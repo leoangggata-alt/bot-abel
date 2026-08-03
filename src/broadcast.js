@@ -35,7 +35,9 @@ export async function sendBroadcastToGroups(sock, targets, message, options = {}
     ? options.onProgress
     : async () => {};
   const results = [];
-  const content = formatGroupBroadcastMessage(message);
+  const content = options.preformatted
+    ? String(message || "").trim()
+    : formatGroupBroadcastMessage(message);
 
   for (let index = 0; index < targets.length; index += 1) {
     const target = targets[index];
@@ -86,6 +88,7 @@ export async function processNextBroadcastJob(sock, options = {}) {
   try {
     await sendBroadcastToGroups(sock, pendingTargets, job.message, {
       delayMs: options.delayMs,
+      preformatted: job.preformatted === true,
       onProgress: async result => {
         latest = updateBroadcastJob(job.id, current => {
           const results = [...(current.results || []), result];

@@ -114,7 +114,13 @@ export function normalizeBroadcastRequest(input, availableGroups) {
     throw error;
   }
 
-  return { message, targetMode, targets };
+  return {
+    message,
+    targetMode,
+    targets,
+    preformatted: input?.preformatted === true,
+    templateMode: String(input?.templateMode || "custom").slice(0, 30),
+  };
 }
 
 export function createBroadcastJob(input, availableGroups) {
@@ -125,6 +131,8 @@ export function createBroadcastJob(input, availableGroups) {
     id: crypto.randomUUID(),
     status: "queued",
     message: normalized.message,
+    preformatted: normalized.preformatted,
+    templateMode: normalized.templateMode,
     targetMode: normalized.targetMode,
     targets: normalized.targets,
     total: normalized.targets.length,
