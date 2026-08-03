@@ -177,7 +177,7 @@ export function createGroupMemoryStore(filePath = DEFAULT_FILE) {
     const latestCount = Math.min(5, safeLimit);
     const latest = all.slice(-latestCount);
     const latestIds = new Set(latest.map(message => message.id));
-    const relevant = all
+    const anchors = all
       .map((message, index) => {
         const haystack = `${message.senderName || ""} ${message.text}`.toLowerCase();
         const score = terms.reduce(
@@ -188,10 +188,18 @@ export function createGroupMemoryStore(filePath = DEFAULT_FILE) {
       })
       .filter(item => item.score > 0 && !latestIds.has(item.message.id))
       .sort((a, b) => b.score - a.score || b.index - a.index)
-      .slice(0, safeLimit - latestCount)
-      .map(item => item.message);
+      .slice(0, Math.max(1, Math.floor((safeLimit - latestCount) / 3)));
 
-    const selectedIds = new Set([...relevant, ...latest].map(message => message.id));
+    // Sertakan percakapan tepat sebelum/sesudah hasil yang relevan. Jumlah
+    // pesan tetap dibatasi seperti sebelumnya, tetapi konteks tidak terpotong.
+    const selectedIds = new Set(latest.map(message => message.id));
+    for (const anchor of anchors) {
+      for (const neighborIndex of [anchor.index - 1, anchor.index, anchor.index + 1]) {
+        if (neighborIndex >= 0 && neighborIndex < all.length && selectedIds.size < safeLimit) {
+          selectedIds.add(all[neighborIndex].id);
+        }
+      }
+    }
     for (let index = all.length - 1; index >= 0 && selectedIds.size < safeLimit; index -= 1) {
       selectedIds.add(all[index].id);
     }
@@ -274,5 +282,5 @@ export function injectGroupMemory(groupId, request) {
   const prompt = cleanText(request, 20000);
   const memory = getGroupMemoryContext(groupId, { query: prompt });
   if (!memory) return prompt;
-  return `${memory}\n\nPERMINTAAN AKTIF PENGGUNA:\n${prompt}\n\nATURAN JAWABAN AKTIF:\nJawab langsung pertanyaan aktif di atas dan jangan berpindah topik. Gunakan memori hanya bila benar-benar relevan. Bedakan fakta tersimpan, pendapat anggota, candaan, dan dugaan. Jangan mengarang detail yang tidak ada.`;
+  return `${memory}\n\nPERMINTAAN AKTIF PENGGUNA:\n${prompt}\n\nATURAN JAWABAN AKTIF:\nJawab langsung pertanyaan aktif di atas dan jangan berpindah topik. Gunakan memori hanya bila benar-benar relevan. Bedakan fakta tersimpan, pendapat anggota, candaan, dan dugaan. Jangan mencampur ucapan atau pengalaman satu anggota dengan anggota lain. Jika informasi lama bertentangan, prioritaskan koreksi terbaru yang jelas dan sebutkan ketidakpastiannya. Jangan mengarang detail yang tidak ada.`;
 }

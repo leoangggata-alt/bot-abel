@@ -258,6 +258,7 @@ test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", (
     });
     assert.match(relevantContext, /MERPATI/);
     assert.ok(relevantContext.length <= 4500);
+    assert.match(relevantContext, /Obrolan terbaru nomor 24/);
 
     const teaching = store.addTeaching(
       groupId,

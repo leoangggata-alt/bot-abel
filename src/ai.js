@@ -219,6 +219,10 @@ export function buildSystemPrompt(settings) {
 - Saat menganalisis gambar, susun bila relevan: (1) yang terlihat, (2) teks/OCR persis, (3) analisis atau dugaan yang diberi label, (4) kesimpulan/tindakan. Periksa objek, teks, jumlah, warna, posisi, dan konteks. Jangan mengaku membaca bagian yang buram.
 - Ikuti tingkat detail yang diminta. Untuk permintaan "detail/lengkap", berikan hasil terstruktur, contoh, langkah, dan bagian siap salin. Untuk pertanyaan sederhana, tetap ringkas.
 - Ingat konteks percakapan yang diberikan.
+- Gunakan riwayat seperti ingatan manusia yang hati-hati: hubungkan hanya bagian yang relevan, perhatikan siapa yang mengatakan sesuatu, dan jangan memindahkan pengalaman, preferensi, atau masalah satu anggota kepada anggota lain.
+- Jika riwayat lama bertentangan dengan koreksi yang lebih baru dan jelas, prioritaskan informasi terbaru. Jika identitas pembicara atau faktanya tidak pasti, katakan bahwa konteks belum cukup alih-alih menebak.
+- Untuk pertanyaan kompleks, mulai dengan kesimpulan atau solusi utama, lalu berikan alasan, langkah terurut, contoh konkret, cara memeriksa hasil, risiko penting, dan alternatif bila relevan. Jangan mengganti permintaan solusi menjadi ide konten kecuali pengguna memintanya.
+- Tulis natural seperti rekan manusia yang kompeten: sesuaikan panjang dengan kesulitan pertanyaan, hindari pengulangan dan kalimat pengisi, tetapi jangan menghilangkan detail penting.
 - Di grup, anggota memberi pertanyaan dan perintah melalui pesan berprefix !. Ikuti perintah yang aman dan masih dalam kemampuan bot.
 - Untuk konten affiliate/jualan/UGC, buat keluaran yang siap pakai: hook, skrip, dialog persis, shot list, caption, CTA, hashtag, prompt visual Nano Banana, prompt video Google Flow/Veo per klip, audio, dan negative prompt. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
 - Pertanyaan tentang jualan, akun, atau usaha milik anggota adalah konsultasi untuk anggota tersebut. Jangan mengambil atau membocorkan data penjualan dashboard bot kecuali pengguna secara tegas meminta statistik pesanan toko ABEL-LAB/panel bot.
@@ -653,8 +657,9 @@ export async function chatAI(userId, pesan, options = {}) {
     };
     const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(activeRequest);
     const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(activeRequest);
+    const isComplexQuestion = activeRequest.length >= 140 || /\b(?:analisis|solusi|strategi|rencana|diagnosis|bandingkan|perbandingan|pengaruh|dampak|penyebab|masalah|cara mengatasi|kenapa.+bagaimana)\b/i.test(activeRequest);
     const requestedMax = Number(options.maxOutputTokens || (
-      isLongFormMarketing ? 5000 : tiktokAnalysisMode ? 3000 : tiktokSalesMode ? 2800 : wantsDetailedAnswer ? 3200 : defaultOutputTokens(mode)
+      isLongFormMarketing ? 5000 : tiktokAnalysisMode ? 3000 : tiktokSalesMode ? 2800 : wantsDetailedAnswer ? 3200 : isComplexQuestion ? 2800 : defaultOutputTokens(mode)
     ));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     const memoryKey = `${botProfile?.id || "abel"}:${userId}`;
