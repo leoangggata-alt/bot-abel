@@ -144,11 +144,17 @@ async function kirimIdentitasPencipta(sock, to, mentions = []) {
 
 export function isCreatorOrOwnerQuestion(text = "") {
   if (isCreatorQuestion(text)) return true;
-  const value = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const value = String(text)
+    .toLowerCase()
+    .replace(/\b(pencipta|pembuat|owner|orner|bos|pemilik)(?:mu|nya)\b/g, "$1 kamu")
+    .replace(/[^a-z0-9\s]/g, " ");
   const asksWho = /\b(?:siapa|sapa)\b/.test(value);
   const ownerWords = /\b(?:owner|orner|bos|pemilik)\b/.test(value);
-  const botWords = /\b(?:kamu|mu|abel|arka|bot)\b/.test(value);
-  return asksWho && ownerWords && botWords;
+  const creatorWords = /\b(?:pencipta|pembuat|developer)\b/.test(value);
+  const botWords = /\b(?:kamu|abel|arka|bot)\b/.test(value);
+  const asksPhoto = /\b(?:foto|poto|gambar)\b/.test(value);
+  return (asksWho && (ownerWords || creatorWords) && botWords) ||
+    (asksPhoto && (ownerWords || creatorWords));
 }
 
 export function isPermintaanPromptAffiliate(teks = "") {
