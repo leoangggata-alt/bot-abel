@@ -32,6 +32,7 @@ import {
   updateBotProfile,
 } from "./src/bot-profile-store.js";
 import { getHostMode, setHostRole } from "./src/host-mode-store.js";
+import { readProducts, updateProducts } from "./src/product-store.js";
 
 dotenv.config();
 
@@ -41,7 +42,6 @@ const PORT = Number.parseInt(process.env.ADMIN_PORT || "8080", 10);
 const HOST = process.env.ADMIN_HOST || "127.0.0.1";
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-const DATA_FILE     = path.join(__dirname, "data", "products.json");
 const ORDERS_FILE   = path.join(__dirname, "data", "orders.json");
 const SETTINGS_FILE = path.join(__dirname, "data", "settings.json");
 const TUNNEL_LOG    = path.join(__dirname, "logs", "tunnel.log");
@@ -156,14 +156,6 @@ app.put("/api/host-mode", (req, res) => {
 
 
 // ── Helper baca/tulis data ────────────────────────────────────
-function readProducts() {
-  if (!fs.existsSync(DATA_FILE)) return [];
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-}
-function saveProducts(data) {
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
 function readOrders() {
   if (!fs.existsSync(ORDERS_FILE)) return [];
   try { return JSON.parse(fs.readFileSync(ORDERS_FILE, "utf-8")); } catch { return []; }
@@ -186,37 +178,61 @@ function saveSettings(data) {
 // ── API Produk ────────────────────────────────────────────────
 // GET semua produk
 app.get("/api/products", (req, res) => {
-  res.json(readProducts());
+  try {
+    res.json(readProducts());
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
 });
 
 // POST tambah produk baru
 app.post("/api/products", (req, res) => {
-  const products = readProducts();
-  const newId = products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1;
-  // Auto-generate kode jika kosong
-  const kode = req.body.kode || `P${String(newId).padStart(3, "0")}`;
-  const produk = { id: newId, kode, aktif: true, ...req.body, kode };
-  products.push(produk);
-  saveProducts(products);
-  res.json({ success: true, produk });
+  try {
+    let produk;
+    updateProducts(products => {
+      const ids = products.map(p => Number(p.id)).filter(Number.isFinite);
+      const newId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
+      const kode = String(req.body.kode || `P${String(newId).padStart(3, "0")}`).trim().toUpperCase();
+      produk = { id: newId, kode, aktif: true, ...req.body, kode };
+      products.push(produk);
+      return products;
+    });
+    res.json({ success: true, produk });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message });
+  }
 });
 
 // PUT update produk (termasuk kode)
 app.put("/api/products/:id", (req, res) => {
-  const products = readProducts();
-  const idx = products.findIndex(p => p.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: "Produk tidak ditemukan" });
-  products[idx] = { ...products[idx], ...req.body };
-  saveProducts(products);
-  res.json({ success: true, produk: products[idx] });
+  try {
+    let produk;
+    updateProducts(products => {
+      const idx = products.findIndex(p => p.id === parseInt(req.params.id));
+      if (idx === -1) {
+        const error = new Error("Produk tidak ditemukan");
+        error.status = 404;
+        throw error;
+      }
+      const kode = String(req.body.kode || products[idx].kode || "").trim().toUpperCase();
+      produk = { ...products[idx], ...req.body, kode };
+      products[idx] = produk;
+      return products;
+    });
+    res.json({ success: true, produk });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message });
+  }
 });
 
 // DELETE hapus produk
 app.delete("/api/products/:id", (req, res) => {
-  const products = readProducts();
-  const filtered = products.filter(p => p.id !== parseInt(req.params.id));
-  saveProducts(filtered);
-  res.json({ success: true });
+  try {
+    updateProducts(products => products.filter(p => p.id !== parseInt(req.params.id)));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message });
+  }
 });
 
 // ── API Settings ──────────────────────────────────────────────

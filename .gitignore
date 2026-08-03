@@ -9,6 +9,9 @@ logs/
 data/orders.json
 data/settings.json
 data/products.json
+data/products.backup.json
+data/products.corrupt-*
+data/products.recovered-*
 data/api-keys.json
 data/ai-settings.json
 data/.api-key-secret

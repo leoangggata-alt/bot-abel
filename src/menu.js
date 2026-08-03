@@ -3,13 +3,12 @@
 //  Produk dibaca langsung dari data/products.json (Admin Panel)
 // ============================================================
 import dotenv from "dotenv";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { readProducts } from "./product-store.js";
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
 export const BANNER_FILE = path.join(__dirname, "../assets/banner.png");
 const PREFIX =
   process.env.BOT_PREFIX ||
@@ -20,9 +19,7 @@ const STORE_NAME = process.env.STORE_NAME || "ABEL-LAB";
 // ── Baca produk dari file JSON ────────────────────────────────
 function bacaProduk() {
   try {
-    if (!fs.existsSync(PRODUCTS_FILE)) return [];
-    const data = JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf-8"));
-    return data.filter(p => p.aktif !== false); // hanya yang aktif
+    return readProducts().filter(p => p.aktif !== false); // hanya yang aktif
   } catch (e) {
     console.error("[MENU] Error baca produk:", e.message);
     return [];

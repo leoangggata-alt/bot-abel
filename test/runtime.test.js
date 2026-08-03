@@ -46,9 +46,27 @@ import {
 } from "../src/handler.js";
 import { hitungTotalOrder, kirimQRIS } from "../src/order.js";
 import { createGroupMemoryStore } from "../src/group-memory-store.js";
+import { createProductStore, validateProducts } from "../src/product-store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
+
+test("penyimpanan produk atomik memulihkan backup saat file utama rusak", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "abel-products-"));
+  const filePath = path.join(directory, "products.json");
+  const backupPath = path.join(directory, "products.backup.json");
+  const store = createProductStore({ filePath, backupPath });
+  const products = [{ id: 1, kode: "P001", nama: "Produk Tes", harga: 10000, stok: 2 }];
+  store.write(products);
+  fs.writeFileSync(filePath, Buffer.alloc(128));
+  assert.deepEqual(store.read(), products);
+  store.update(current => [...current, { id: 2, kode: "P002", nama: "Produk Baru" }]);
+  assert.equal(store.read().length, 2);
+  assert.throws(
+    () => validateProducts([{ kode: "P001" }, { kode: "p001" }]),
+    /sudah digunakan/i,
+  );
+});
 
 test("identitas pencipta selalu ABEL-LAB tanpa memanggil provider", async () => {
   assert.equal(isCreatorQuestion("Siapa yang menciptakan kamu?"), true);

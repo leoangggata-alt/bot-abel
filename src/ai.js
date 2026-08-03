@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { getApiKeyCandidates } from "./api-key-store.js";
 import { getAISettings } from "./ai-settings.js";
+import { readProducts } from "./product-store.js";
 dotenv.config();
 
 const history = {};
@@ -15,7 +16,6 @@ const modelCooldowns = new Map();
 const candidateCursor = new Map();
 const MAX_KEYS_PER_PROVIDER_ATTEMPT = 2;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
 const ORDERS_FILE = path.join(__dirname, "../data/orders.json");
 
 function formatRp(value) {
@@ -24,7 +24,7 @@ function formatRp(value) {
 
 export function buildCatalogContext() {
   try {
-    const products = JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf8"))
+    const products = readProducts()
       .filter(product => product.aktif !== false)
       .slice(0, 60);
     if (!products.length) return "Katalog aktif sedang kosong.";

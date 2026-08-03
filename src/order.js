@@ -6,17 +6,16 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { readProducts, updateProducts } from "./product-store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PRODUCTS_FILE = path.join(__dirname, "../data/products.json");
 const ORDERS_FILE   = path.join(__dirname, "../data/orders.json");
 const QRIS_FILE     = path.join(__dirname, "../assets/qris.png");
 
 // ── Helper baca/tulis ─────────────────────────────────────────
 function bacaProduk() {
   try {
-    if (!fs.existsSync(PRODUCTS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf-8"));
+    return readProducts();
   } catch { return []; }
 }
 function bacaOrders() {
@@ -202,12 +201,11 @@ export function prosesOrder(senderNum, teks) {
   simpanOrders(orders);
 
   // Kurangi stok
-  const produkList = bacaProduk();
-  const idx = produkList.findIndex(p => p.kode === produk.kode);
-  if (idx !== -1 && produkList[idx].stok !== undefined) {
-    produkList[idx].stok -= jumlah;
-    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(produkList, null, 2));
-  }
+  updateProducts(produkList => {
+    const idx = produkList.findIndex(p => p.kode === produk.kode);
+    if (idx !== -1 && produkList[idx].stok !== undefined) produkList[idx].stok -= jumlah;
+    return produkList;
+  });
 
   return {
     ok: true,
