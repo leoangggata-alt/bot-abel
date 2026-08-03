@@ -1,9 +1,6 @@
 // Otak AI Abel: urutan provider, model, dan memori diatur dari panel admin.
 import https from "https";
 import crypto from "crypto";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { getApiKeyCandidates } from "./api-key-store.js";
 import { getAISettings } from "./ai-settings.js";
@@ -15,8 +12,6 @@ const candidateCooldowns = new Map();
 const modelCooldowns = new Map();
 const candidateCursor = new Map();
 const MAX_KEYS_PER_PROVIDER_ATTEMPT = 2;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ORDERS_FILE = path.join(__dirname, "../data/orders.json");
 
 function formatRp(value) {
   return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
@@ -127,27 +122,12 @@ export function summarizeStoreActivity(orders = [], dateKey = jakartaDateKey()) 
 }
 
 function buildStoreActivityReply(botProfile = {}) {
-  try {
-    const storedOrders = JSON.parse(fs.readFileSync(ORDERS_FILE, "utf8"));
-    const orders = Array.isArray(storedOrders) ? storedOrders : [];
-    const dateKey = jakartaDateKey();
-    const today = orders.filter(order => orderDateKey(order) === dateKey);
-    const completed = today.filter(order => String(order.status).toLowerCase() === "selesai").length;
-    const waiting = today.length - completed;
-    const facts = `hari ini tercatat ${today.length} pesanan: ${completed} selesai dan ${waiting} masih diproses/menunggu`;
-    const assessment = today.length === 0
-      ? "Jadi memang belum ada transaksi yang tercatat hari ini."
-      : "Sudah ada aktivitas, tetapi untuk menyebutnya ramai atau sepi tetap perlu dibandingkan dengan target harian.";
-    if (botProfile.id === "arka") {
-      return `Data realnya, ${facts}. ${assessment} Itu jawaban paling jujur—nggak pakai ngarang angka, Bos. 😎`;
-    }
-    return `Aku cek datanya ya, sayang: ${facts}. ${assessment} Tenang, kita lihat datanya dulu baru bikin kesimpulan, biar nggak asal manis di mulut aja. 😄`;
-  } catch (error) {
-    console.warn(`[AI] Data aktivitas toko tidak dapat dibaca: ${error.message}`);
-    return botProfile.id === "arka"
-      ? "Data penjualan sedang belum bisa gue baca, jadi gue nggak akan nebak ramai atau sepi. Coba cek lagi sebentar, Bos."
-      : "Maaf ya, sayang, data penjualannya sedang belum bisa kubaca. Aku nggak mau asal bilang ramai atau sepi. 😅";
+  // Statistik operasional hanya boleh dilihat di panel admin. Jalur chat tidak
+  // pernah membaca atau mengirim angka dashboard, termasuk kepada anggota grup.
+  if (botProfile.id === "arka") {
+    return "Data penjualan dashboard bersifat khusus admin dan tidak gue tampilkan lewat chat. Silakan periksa langsung di panel admin, Bos.";
   }
+  return "Maaf ya, data penjualan dashboard bersifat khusus admin dan tidak aku tampilkan lewat chat. Silakan periksa langsung di panel admin. 🔒";
 }
 
 function effectiveTemperature(settings, mode) {
@@ -224,6 +204,7 @@ export function buildSystemPrompt(settings) {
 - Untuk konten affiliate/jualan/UGC, buat keluaran yang siap pakai: hook, skrip, dialog persis, shot list, caption, CTA, hashtag, prompt visual Nano Banana, prompt video Google Flow/Veo per klip, audio, dan negative prompt. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
 - Pertanyaan tentang jualan, akun, atau usaha milik anggota adalah konsultasi untuk anggota tersebut. Jangan mengambil atau membocorkan data penjualan dashboard bot kecuali pengguna secara tegas meminta statistik pesanan toko ABEL-LAB/panel bot.
 - Khusus konsultasi jualan TikTok, berikan jawaban substantif dan siap dipakai: analisis penyebab, urutan prioritas, ide konten, contoh hook/skrip/CTA, cara eksekusi, serta metrik pengujian. Jangan berhenti pada nasihat umum seperti "konsisten posting".
+- Data penjualan dashboard, jumlah pesanan, transaksi, pembeli, dan performa toko ABEL-LAB bersifat khusus admin. Jangan pernah menampilkan atau menyimpulkannya lewat chat, meskipun pengguna meminta secara langsung. Arahkan pemeriksaan data ke panel admin.
 - Saat pengguna meminta harga, stok, katalog, atau rekomendasi produk, gunakan hanya katalog aktual yang disediakan. Sebut harga, stok, manfaat dari deskripsi, CTA yang natural, dan format order !order KODE JUMLAH. Produk HABIS tidak boleh ditawarkan sebagai ready stock. Jika kode duplikat, jangan menebak.
 - Jawab pertanyaan aktif terlebih dahulu dan pertahankan topiknya. Memori, katalog, serta riwayat hanya konteks pendukung; abaikan bagian yang tidak relevan. Jangan memberi sapaan generik atau template kosong ketika pengguna sudah mengajukan pertanyaan jelas.
 - Boleh bercanda, membuat lelucon, tebak-tebakan, atau balasan santai. Tetap ramah, tidak merendahkan identitas seseorang, tidak mempermalukan, dan kembali serius saat pengguna membutuhkan bantuan.

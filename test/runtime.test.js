@@ -475,17 +475,19 @@ test("konsultasi TikTok tidak memakai katalog atau dashboard bot", () => {
   assert.match(prompt, /Jangan menyebut jumlah pesanan.*data dashboard bot/i);
 });
 
-test("pertanyaan aktivitas toko dijawab lokal tanpa halusinasi provider", async () => {
+test("data penjualan dashboard tidak pernah ditampilkan lewat chat", async () => {
   const abelReply = await chatAI("uji-aktivitas-abel", "jualan hari ini rame kah?", {
     profile: DEFAULT_BOT_PROFILES.abel,
   });
   const arkaReply = await chatAI("uji-aktivitas-arka", "penjualan sekarang berapa?", {
     profile: DEFAULT_BOT_PROFILES.arka,
   });
-  assert.match(abelReply, /hari ini tercatat \d+ pesanan/i);
-  assert.match(abelReply, /sayang|manis/i);
-  assert.match(arkaReply, /hari ini tercatat \d+ pesanan/i);
-  assert.match(arkaReply, /Bos|Data realnya/i);
+  assert.match(abelReply, /khusus admin/i);
+  assert.match(abelReply, /panel admin/i);
+  assert.doesNotMatch(abelReply, /tercatat \d+|\d+ pesanan|selesai dan/i);
+  assert.match(arkaReply, /khusus admin/i);
+  assert.match(arkaReply, /panel admin/i);
+  assert.doesNotMatch(arkaReply, /tercatat \d+|\d+ pesanan|selesai dan/i);
 });
 
 test("AI menerima katalog aktual dan perintah visual natural", () => {
