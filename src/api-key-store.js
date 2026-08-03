@@ -30,6 +30,13 @@ export const API_PROVIDERS = Object.freeze({
     color: "#f97316",
     usage: "Otak chat cadangan cepat",
   },
+  openrouter: {
+    name: "OpenRouter Free",
+    icon: "OR",
+    envName: "OPENROUTER_API_KEY",
+    color: "#6366f1",
+    usage: "Pool API key OpenRouter Free",
+  },
   xai: {
     name: "xAI / Grok",
     icon: "𝕏",

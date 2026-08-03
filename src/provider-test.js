@@ -24,6 +24,8 @@ async function testCandidate(provider, key) {
       return requestJson("api.openai.com", "/v1/models", { Authorization: `Bearer ${key}` });
     case "groq":
       return requestJson("api.groq.com", "/openai/v1/models", { Authorization: `Bearer ${key}` });
+    case "openrouter":
+      return requestJson("openrouter.ai", "/api/v1/models", { Authorization: `Bearer ${key}` });
     case "xai":
       return requestJson("api.x.ai", "/v1/models", { Authorization: `Bearer ${key}` });
     case "gemini":
