@@ -127,6 +127,44 @@ test("kontak owner dikenali dari nomor WhatsApp dan pertanyaan pencipta mengirim
   assert.equal(isOwnerIdentityQuestion("siapa nama anggota lain?"), false);
 });
 
+test("Abel dan Arka wajib mengirim foto ketika ditanya siapa bosnya", async () => {
+  const sent = [];
+  const sock = {
+    user: { id: "628216035841:1@s.whatsapp.net" },
+    readMessages: async () => {},
+    sendPresenceUpdate: async () => {},
+    sendMessage: async (to, content) => sent.push({ to, content }),
+  };
+
+  await handleMessage(sock, {
+    key: {
+      remoteJid: "120363000000000010@g.us",
+      participant: "628111111110@s.whatsapp.net",
+      fromMe: false,
+      id: "ABEL-BOSS-PHOTO",
+    },
+    message: { conversation: "!abel siapa bos kamu?" },
+  }, DEFAULT_BOT_PROFILES.abel);
+
+  await handleMessage(sock, {
+    key: {
+      remoteJid: "120363000000000011@g.us",
+      participant: "628111111111@s.whatsapp.net",
+      fromMe: false,
+      id: "ARKA-BOSS-PHOTO",
+    },
+    message: { conversation: "!arka siapa bos kamu?" },
+  }, DEFAULT_BOT_PROFILES.arka);
+
+  assert.equal(sent.length, 2);
+  for (const delivery of sent) {
+    assert.ok(Buffer.isBuffer(delivery.content.image));
+    assert.match(delivery.content.caption, /OWNER & PENCIPTA/i);
+    assert.match(delivery.content.caption, /ABEL-LAB/);
+    assert.equal(delivery.content.mentions.length, 1);
+  }
+});
+
 test("permintaan QRIS natural dikenali", () => {
   assert.equal(isPermintaanQRIS("mana QR pesanan saya"), true);
   assert.equal(isPermintaanQRIS("tolong kirimkan qris pembayaran"), true);
