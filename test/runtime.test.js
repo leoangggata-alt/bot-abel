@@ -57,6 +57,7 @@ import {
 } from "../src/handler.js";
 import { hitungTotalOrder, kirimQRIS } from "../src/order.js";
 import { createGroupMemoryStore } from "../src/group-memory-store.js";
+import { createBrainMemoryStore } from "../src/brain-memory-store.js";
 import { createProductStore, validateProducts } from "../src/product-store.js";
 import { assessRuntimeHealth } from "../src/self-healing.js";
 
@@ -312,6 +313,25 @@ test("memori grup persisten, terdeduplikasi, dapat diajar, dan dapat dihapus", (
   }
 });
 
+test("disk otak menyimpan pelajaran Abel, Arka, dan bersama secara persisten", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "abel-brain-memory-"));
+  const memoryFile = path.join(directory, "brain.json");
+  try {
+    const store = createBrainMemoryStore(memoryFile);
+    const shared = store.add("bersama", "Pencipta Abel dan Arka adalah ABEL-LAB.", "owner");
+    store.add("abel", "Abel menyukai gaya romantis yang sopan.", "owner");
+    store.add("arka", "Arka mengutamakan analisis sebab-akibat.", "owner");
+    assert.deepEqual(store.stats(), { shared: 1, abel: 1, arka: 1 });
+    assert.match(store.context("abel", "siapa pencipta Abel?"), /ABEL-LAB/);
+    assert.match(store.context("abel", "gaya romantis"), /romantis/);
+    assert.doesNotMatch(store.context("abel", "analisis sebab akibat"), /Arka/);
+    assert.equal(store.remove(shared.id.toLowerCase()), true);
+    assert.equal(createBrainMemoryStore(memoryFile).stats().shared, 0);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("permintaan aktif dipisahkan dari memori agar riwayat AI tidak membengkak", () => {
   const envelope = "MEMORI PERSISTEN GRUP\n- data lama\n\nPERMINTAAN AKTIF PENGGUNA:\nJelaskan dengan akurat.\n\nATURAN JAWABAN AKTIF:\nJawab langsung.";
   assert.equal(extractActiveRequest(envelope), "Jelaskan dengan akurat.");
@@ -408,6 +428,13 @@ test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
   const ownerPrompt = buildSystemPrompt({ ...sharedSettings, verifiedOwner: true });
   assert.match(ownerPrompt, /PENGIRIM TERVERIFIKASI/);
   assert.match(ownerPrompt, /Bos\/owner/);
+
+  const memoryPrompt = buildSystemPrompt({
+    ...sharedSettings,
+    brainMemory: "- [M-TEST1234] Gunakan sapaan Sahabat Abel saat acara resmi.",
+  });
+  assert.match(memoryPrompt, /MEMORI OTAK PERSISTEN/);
+  assert.match(memoryPrompt, /Sahabat Abel/);
 });
 
 test("permintaan siaran memvalidasi tujuan grup dan panjang pesan", () => {
