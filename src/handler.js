@@ -74,7 +74,7 @@ const DIRECT_BOT_COMMANDS = new Set([
   "ciptakan", "generate", "gambar", "image", "img", "foto", "reset", "rules",
   "peraturan", "tagall", "all", "link", "ping", "analisis", "analisa", "analyze",
   "vision", "lihat", "baca", "ocr", "rangkum", "ringkas", "memori", "memory",
-  "ingat", "ajar", "ajari", "lupa", "didik", "otak", "hapusotak", "profilku",
+  "ingat", "ajar", "ajari", "lupa", "lupakan", "didik", "otak", "hapusotak", "profilku",
 ]);
 
 // Ambil deskripsi dari bahasa natural tanpa salah menangkap permintaan "prompt gambar".
@@ -895,7 +895,8 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       break;
     }
 
-    case "lupa": {
+    case "lupa":
+    case "lupakan": {
       if (!isGrup) {
         await kirim(sock, from, "⚠️ Perintah ini hanya tersedia di grup.");
         break;
