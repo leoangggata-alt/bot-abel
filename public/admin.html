@@ -898,6 +898,7 @@
   let botDuoData = null;
   let botStatusPollTimer = null;
   let hostModeData = null;
+  let commerceRefreshTimer = null;
   const providerTestResults = {};
   let editingId = null;
   let isAktif = true;
@@ -916,19 +917,24 @@
 
   // ── Init ──────────────────────────────────────────────────
   async function init() {
-    await loadStats();
-    await loadProducts();
-    await loadOrders();
+    await Promise.allSettled([loadStats(), loadProducts(), loadOrders()]);
     await loadDashboard();
-    await loadSettings();
-    await loadApiKeys();
-    await loadTunnelUrl();
-    await loadHostMode();
+    await Promise.allSettled([loadSettings(), loadApiKeys(), loadTunnelUrl(), loadHostMode()]);
     updateBroadcastPreview();
     // Refresh URL setiap 30 detik (jika tunnel baru aktif)
     setInterval(loadTunnelUrl, 30000);
     setInterval(loadHostMode, 5000);
+    commerceRefreshTimer = setInterval(refreshCommerceData, 30000);
   }
+
+  async function refreshCommerceData() {
+    await Promise.allSettled([loadStats(), loadProducts(), loadOrders()]);
+    await loadDashboard();
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshCommerceData();
+  });
 
   // ── Tunnel URL ────────────────────────────────────────────
   async function loadTunnelUrl() {
@@ -1008,7 +1014,9 @@
 
 
   async function loadStats() {
-    const r = await fetch('/api/stats').then(r=>r.json());
+    const response = await fetch('/api/stats', { cache: 'no-store' });
+    const r = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(r.error || `HTTP ${response.status}`);
     document.getElementById('stat-total').textContent = r.totalProduk;
     document.getElementById('stat-aktif').textContent = r.produkAktif;
     document.getElementById('stat-order').textContent = r.totalOrder || 0;
@@ -1021,7 +1029,7 @@
 
   async function loadProducts() {
     try {
-      const response = await fetch('/api/products');
+      const response = await fetch('/api/products', { cache: 'no-store' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
       if (!Array.isArray(result)) throw new Error('Format data produk tidak valid');
