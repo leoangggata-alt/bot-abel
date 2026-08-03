@@ -64,6 +64,15 @@ export function isTikTokSalesQuestion(text = "") {
   return mentionsTikTok && discussesSelling;
 }
 
+export function isTikTokAnalysisQuestion(text = "") {
+  const value = String(text).toLowerCase();
+  const discussesTikTokAffiliate = isTikTokSalesQuestion(value)
+    || /\b(?:affiliate|afiliasi)\b/.test(value);
+  const asksForAnalysis = /\b(?:kenapa|mengapa|penyebab|hubungan|pengaruh|dampak|seberapa|signifikan|analisis|solusi|atasi|mengatasi|views?|traffic|seret|turun|anjlok|algoritma|kebijakan|pajak|pph|konversi)\b/.test(value);
+  const explicitlyRequestsContent = /\b(?:buatkan|bikinkan|bikin|susun|rancang|ide konten|hook|skrip|script|caption|prompt|ugc|naskah video)\b/.test(value);
+  return discussesTikTokAffiliate && asksForAnalysis && !explicitlyRequestsContent;
+}
+
 export function needsCatalogContext(text = "") {
   const value = String(text).toLowerCase();
   if (isTikTokSalesQuestion(value)) {
@@ -168,7 +177,15 @@ export function buildSystemPrompt(settings) {
   const catalogSection = includeCatalog
     ? `## KATALOG TOKO AKTUAL\n${catalog}\n\nGunakan katalog ini sebagai satu-satunya sumber harga dan stok toko.`
     : "## KATALOG TOKO\nKatalog tidak dilampirkan karena pertanyaan aktif tidak membutuhkan harga atau stok. Jika pengguna kemudian meminta harga/stok, arahkan ke !harga atau jawab pada permintaan berikutnya dengan katalog aktual.";
-  const activeTaskSection = settings.tiktokSalesMode
+  const activeTaskSection = settings.tiktokAnalysisMode
+    ? `\n\n## MODE ANALISIS MASALAH TIKTOK/AFFILIATE AKTIF
+- Jawab pertanyaan inti pengguna secara langsung pada paragraf pertama. Jangan mengubahnya menjadi daftar ide konten, hook, skrip, caption, atau kalender posting kecuali pengguna secara jelas memintanya.
+- Susun jawaban berdasarkan: kesimpulan utama, mekanisme sebab-akibat, tingkat pengaruh, penyebab alternatif yang lebih mungkin, cara membedakan penyebab dengan data akun, lalu solusi berurutan berdasarkan prioritas.
+- Untuk pertanyaan tentang views/traffic yang turun, bedakan distribusi platform, kualitas retensi, kecocokan audiens-produk, performa konversi, kondisi akun, kompetisi, musim, dan faktor kebijakan. Jangan menganggap korelasi waktu sebagai bukti sebab-akibat.
+- Untuk pajak, kebijakan pemerintah, algoritma, atau kondisi "hari ini", jangan mengarang perubahan terbaru. Jelaskan jalur pengaruh langsung dan tidak langsung, sebutkan tingkat kepastian, serta bagian yang harus diverifikasi dari sumber resmi.
+- Berikan solusi diagnosis yang konkret: data apa yang diperiksa, urutan pengecekan, ambang/perbandingan yang masuk akal, tindakan setelah setiap hasil, dan rencana evaluasi. Hindari nasihat umum tanpa langkah pengujian.
+- Jangan menyebut data penjualan dashboard bot. Data yang dibahas hanya data akun pengguna yang ia berikan sendiri.`
+    : settings.tiktokSalesMode
     ? `\n\n## MODE KONSULTASI JUALAN TIKTOK AKTIF
 - Perlakukan pertanyaan sebagai konsultasi usaha milik pengguna, bukan permintaan statistik toko ABEL-LAB.
 - Jangan menyebut jumlah pesanan, transaksi, pembeli, produk, atau data dashboard bot.
@@ -203,7 +220,7 @@ export function buildSystemPrompt(settings) {
 - Di grup, anggota memberi pertanyaan dan perintah melalui pesan berprefix !. Ikuti perintah yang aman dan masih dalam kemampuan bot.
 - Untuk konten affiliate/jualan/UGC, buat keluaran yang siap pakai: hook, skrip, dialog persis, shot list, caption, CTA, hashtag, prompt visual Nano Banana, prompt video Google Flow/Veo per klip, audio, dan negative prompt. Jangan mengarang klaim, harga, diskon, testimoni, atau spesifikasi produk.
 - Pertanyaan tentang jualan, akun, atau usaha milik anggota adalah konsultasi untuk anggota tersebut. Jangan mengambil atau membocorkan data penjualan dashboard bot kecuali pengguna secara tegas meminta statistik pesanan toko ABEL-LAB/panel bot.
-- Khusus konsultasi jualan TikTok, berikan jawaban substantif dan siap dipakai: analisis penyebab, urutan prioritas, ide konten, contoh hook/skrip/CTA, cara eksekusi, serta metrik pengujian. Jangan berhenti pada nasihat umum seperti "konsisten posting".
+- Khusus konsultasi jualan TikTok, jawab sesuai jenis permintaan. Untuk pertanyaan masalah/penyebab, utamakan diagnosis, hubungan sebab-akibat, solusi, urutan pengujian, dan metrik. Ide konten, hook, skrip, atau CTA hanya diberikan ketika pengguna memintanya atau ketika benar-benar menjadi bagian kecil dari solusi.
 - Data penjualan dashboard, jumlah pesanan, transaksi, pembeli, dan performa toko ABEL-LAB bersifat khusus admin. Jangan pernah menampilkan atau menyimpulkannya lewat chat, meskipun pengguna meminta secara langsung. Arahkan pemeriksaan data ke panel admin.
 - Saat pengguna meminta harga, stok, katalog, atau rekomendasi produk, gunakan hanya katalog aktual yang disediakan. Sebut harga, stok, manfaat dari deskripsi, CTA yang natural, dan format order !order KODE JUMLAH. Produk HABIS tidak boleh ditawarkan sebagai ready stock. Jika kode duplikat, jangan menebak.
 - Jawab pertanyaan aktif terlebih dahulu dan pertahankan topiknya. Memori, katalog, serta riwayat hanya konteks pendukung; abaikan bagian yang tidak relevan. Jangan memberi sapaan generik atau template kosong ketika pengguna sudah mengajukan pertanyaan jelas.
@@ -600,6 +617,7 @@ export async function chatAI(userId, pesan, options = {}) {
   // pertanyaan aktif pengguna yang boleh memicu jawaban identitas khusus.
   const activeRequest = extractActiveRequest(pesan);
   const tiktokSalesMode = isTikTokSalesQuestion(activeRequest);
+  const tiktokAnalysisMode = isTikTokAnalysisQuestion(activeRequest);
   if (isCreatorQuestion(activeRequest)) return "Saya diciptakan oleh ABEL-LAB.";
   if (needsStoreActivityContext(activeRequest)) {
     return buildStoreActivityReply(options.profile || {});
@@ -618,6 +636,7 @@ export async function chatAI(userId, pesan, options = {}) {
       botProfile,
       includeCatalog: needsCatalogContext(activeRequest),
       tiktokSalesMode,
+      tiktokAnalysisMode,
       memoryTurns: Number.isFinite(optionMemoryTurns)
         ? Math.min(50, Math.max(0, optionMemoryTurns))
         : Number.isFinite(profileMemoryTurns)
@@ -633,7 +652,7 @@ export async function chatAI(userId, pesan, options = {}) {
     const isLongFormMarketing = /(?:creative strategist dan copywriter affiliate|sutradara UGC)/i.test(activeRequest);
     const wantsDetailedAnswer = /\b(?:detail|lengkap|mendalam|step[- ]?by[- ]?step|langkah demi langkah|siap copy|siap salin)\b/i.test(activeRequest);
     const requestedMax = Number(options.maxOutputTokens || (
-      isLongFormMarketing ? 5000 : tiktokSalesMode ? 2800 : wantsDetailedAnswer ? 3200 : defaultOutputTokens(mode)
+      isLongFormMarketing ? 5000 : tiktokAnalysisMode ? 3000 : tiktokSalesMode ? 2800 : wantsDetailedAnswer ? 3200 : defaultOutputTokens(mode)
     ));
     const maxOutputTokens = Math.min(5000, Math.max(256, Math.trunc(requestedMax)));
     const memoryKey = `${botProfile?.id || "abel"}:${userId}`;

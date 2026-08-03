@@ -13,6 +13,7 @@ import {
   extractActiveRequest,
   isCreatorQuestion,
   isTikTokSalesQuestion,
+  isTikTokAnalysisQuestion,
   isUsableAIResponse,
   needsCatalogContext,
   needsStoreActivityContext,
@@ -484,6 +485,23 @@ test("konsultasi TikTok tidak memakai katalog atau dashboard bot", () => {
   assert.match(prompt, /MODE KONSULTASI JUALAN TIKTOK AKTIF/);
   assert.match(prompt, /bukan permintaan statistik toko ABEL-LAB/i);
   assert.match(prompt, /Jangan menyebut jumlah pesanan.*data dashboard bot/i);
+});
+
+test("pertanyaan penyebab traffic affiliate masuk mode analisis, bukan pembuat konten", () => {
+  const analytical = "Apakah PPh e-commerce berpengaruh ke views dan traffic konten affiliate TikTok hari ini? Berikan solusi detail.";
+  assert.equal(isTikTokAnalysisQuestion(analytical), true);
+  assert.equal(isTikTokAnalysisQuestion("buatkan ide konten dan hook affiliate TikTok"), false);
+
+  const prompt = buildSystemPrompt({
+    includeCatalog: false,
+    tiktokSalesMode: true,
+    tiktokAnalysisMode: true,
+  });
+  assert.match(prompt, /MODE ANALISIS MASALAH TIKTOK\/AFFILIATE AKTIF/);
+  assert.match(prompt, /Jangan mengubahnya menjadi daftar ide konten/i);
+  assert.match(prompt, /mekanisme sebab-akibat/i);
+  assert.match(prompt, /korelasi waktu sebagai bukti sebab-akibat/i);
+  assert.match(prompt, /solusi diagnosis yang konkret/i);
 });
 
 test("data penjualan dashboard tidak pernah ditampilkan lewat chat", async () => {
