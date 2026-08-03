@@ -60,6 +60,7 @@ import {
 import { hitungTotalOrder, kirimQRIS } from "../src/order.js";
 import { createGroupMemoryStore } from "../src/group-memory-store.js";
 import { createBrainMemoryStore } from "../src/brain-memory-store.js";
+import { createMemberMemoryStore } from "../src/member-memory-store.js";
 import { createProductStore, validateProducts } from "../src/product-store.js";
 import { assessRuntimeHealth } from "../src/self-healing.js";
 
@@ -338,6 +339,25 @@ test("disk otak menyimpan pelajaran Abel, Arka, dan bersama secara persisten", (
   }
 });
 
+test("memori anggota memerlukan persetujuan dan terpisah per grup serta anggota", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "abel-member-memory-"));
+  const memoryFile = path.join(directory, "members.json");
+  try {
+    const store = createMemberMemoryStore(memoryFile);
+    const group = "120363111111111111@g.us";
+    assert.throws(() => store.add(group, "628111@s.whatsapp.net", "Saya menjual produk kecantikan"), /persetujuan/i);
+    store.setEnabled(group, "628111@s.whatsapp.net", true);
+    store.add(group, "628111@s.whatsapp.net", "Saya menjual produk kecantikan di TikTok");
+    assert.match(store.context(group, "628111@s.whatsapp.net", "jualan TikTok"), /produk kecantikan/);
+    assert.equal(store.context(group, "628222@s.whatsapp.net", "jualan TikTok"), "");
+    assert.equal(store.context("120363222222222222@g.us", "628111@s.whatsapp.net", "jualan TikTok"), "");
+    assert.equal(store.clear(group, "628111@s.whatsapp.net"), 1);
+    assert.equal(store.get(group, "628111@s.whatsapp.net").enabled, false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("permintaan aktif dipisahkan dari memori agar riwayat AI tidak membengkak", () => {
   const envelope = "MEMORI PERSISTEN GRUP\n- data lama\n\nPERMINTAAN AKTIF PENGGUNA:\nJelaskan dengan akurat.\n\nATURAN JAWABAN AKTIF:\nJawab langsung.";
   assert.equal(extractActiveRequest(envelope), "Jelaskan dengan akurat.");
@@ -441,6 +461,13 @@ test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
   });
   assert.match(memoryPrompt, /MEMORI OTAK PERSISTEN/);
   assert.match(memoryPrompt, /Sahabat Abel/);
+
+  const memberPrompt = buildSystemPrompt({
+    ...sharedSettings,
+    memberMemory: "- [P-TEST1234] Pengirim menjual produk kecantikan di TikTok.",
+  });
+  assert.match(memberPrompt, /MEMORI PRIBADI PENGIRIM \(OPT-IN\)/);
+  assert.match(memberPrompt, /produk kecantikan/);
 });
 
 test("permintaan siaran memvalidasi tujuan grup dan panjang pesan", () => {

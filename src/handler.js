@@ -41,6 +41,13 @@ import {
   listBrainMemories,
   removeBrainMemory,
 } from "./brain-memory-store.js";
+import {
+  addMemberMemory,
+  clearMemberMemory,
+  getMemberMemory,
+  getMemberMemoryContext,
+  setMemberMemoryEnabled,
+} from "./member-memory-store.js";
 
 const PREFIX =
   process.env.BOT_PREFIX ||
@@ -67,7 +74,7 @@ const DIRECT_BOT_COMMANDS = new Set([
   "ciptakan", "generate", "gambar", "image", "img", "foto", "reset", "rules",
   "peraturan", "tagall", "all", "link", "ping", "analisis", "analisa", "analyze",
   "vision", "lihat", "baca", "ocr", "rangkum", "ringkas", "memori", "memory",
-  "ingat", "ajar", "ajari", "lupa", "didik", "otak", "hapusotak",
+  "ingat", "ajar", "ajari", "lupa", "didik", "otak", "hapusotak", "profilku",
 ]);
 
 // Ambil deskripsi dari bahasa natural tanpa salah menangkap permintaan "prompt gambar".
@@ -376,6 +383,7 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
       profile,
       verifiedOwner: isOwner,
       brainMemory: getBrainMemoryContext(profile.id, prompt),
+      memberMemory: isGrup ? getMemberMemoryContext(from, senderId, prompt) : "",
       memoryTurns: isGrup ? 4 : options.memoryTurns,
     });
 
@@ -570,6 +578,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     profile: botProfile,
     verifiedOwner: isOwner,
     brainMemory: getBrainMemoryContext(botProfile.id, prompt),
+    memberMemory: isGrup ? getMemberMemoryContext(from, senderId, prompt) : "",
     memoryTurns: isGrup ? 4 : options.memoryTurns,
   });
 
@@ -809,6 +818,21 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
         await kirim(sock, from, "⚠️ Memori bersama hanya tersedia di grup.");
         break;
       }
+      const memberAction = sisa.trim().toLowerCase();
+      if (memberAction === "info") {
+        await kirim(sock, from, `🔐 *MEMORI PRIBADI ANGGOTA*\n\nJika diaktifkan, informasi dari *${PREFIX}ingat saya ...* disimpan lokal di PC owner. Potongan relevan dapat dikirim ke provider AI aktif (Gemini, Groq, OpenAI, atau xAI) ketika kamu meminta jawaban. Memori dipisahkan per grup dan tidak diberikan kepada anggota lain.\n\nSetuju: *${PREFIX}memori setuju*\nLihat: *${PREFIX}profilku*\nHapus & cabut persetujuan: *${PREFIX}lupakan saya*`);
+        break;
+      }
+      if (memberAction === "setuju") {
+        setMemberMemoryEnabled(from, senderId, true);
+        await kirim(sock, from, `@${senderNum} ✅ Persetujuan tersimpan. Gunakan *${PREFIX}ingat saya [informasi]*.`, [senderId]);
+        break;
+      }
+      if (["off", "mati", "nonaktif"].includes(memberAction)) {
+        setMemberMemoryEnabled(from, senderId, false);
+        await kirim(sock, from, `@${senderNum} 🔒 Memori pribadi dinonaktifkan dan tidak akan dikirim ke provider. Gunakan *${PREFIX}lupakan saya* untuk menghapus catatan.`, [senderId]);
+        break;
+      }
       const stats = getGroupMemoryStats(from);
       const teachings = getGroupTeachings(from, 5);
       const lessonPreview = teachings.length
@@ -826,11 +850,34 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
       break;
     }
 
+    case "profilku": {
+      if (!isGrup) {
+        await kirim(sock, from, "Profil memori anggota hanya tersedia di grup.");
+        break;
+      }
+      const profileMemory = getMemberMemory(from, senderId);
+      const items = profileMemory.memories.length
+        ? profileMemory.memories.map(item => `• *${item.id}* — ${item.text}`).join("\n")
+        : "• Belum ada informasi yang kamu simpan.";
+      await kirim(sock, from, `@${senderNum} 👤 *PROFIL MEMORIKU*\n\nStatus: *${profileMemory.enabled ? "AKTIF" : "NONAKTIF"}*\nCatatan: *${profileMemory.memories.length}/50*\n\n${items}\n\nTambah: *${PREFIX}ingat saya [informasi]*\nHapus semua: *${PREFIX}lupakan saya*`, [senderId]);
+      break;
+    }
+
     case "ajar":
     case "ajari":
     case "ingat": {
       if (!isGrup) {
         await kirim(sock, from, "⚠️ Pelajaran bersama hanya dapat disimpan dari grup.");
+        break;
+      }
+      const personalLesson = sisa.match(/^saya\s+(.+)/i)?.[1]?.trim();
+      if (personalLesson) {
+        try {
+          const item = addMemberMemory(from, senderId, personalLesson);
+          await kirim(sock, from, `@${senderNum} ✅ Informasi pribadi tersimpan sebagai *${item.id}*. Bot menggunakannya hanya saat relevan.`, [senderId]);
+        } catch (error) {
+          await kirim(sock, from, `@${senderNum} ⚠️ ${error.message}. Baca: *${PREFIX}memori info*`, [senderId]);
+        }
         break;
       }
       if (!(await bolehKelolaMemoriGrup(sock, from, senderId, isOwner))) {
@@ -851,6 +898,11 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     case "lupa": {
       if (!isGrup) {
         await kirim(sock, from, "⚠️ Perintah ini hanya tersedia di grup.");
+        break;
+      }
+      if (/^(?:saya|aku|gue|gua)$/i.test(sisa.trim())) {
+        const removed = clearMemberMemory(from, senderId);
+        await kirim(sock, from, `@${senderNum} ✅ ${removed} catatan pribadimu dihapus dan persetujuan memori dicabut.`, [senderId]);
         break;
       }
       if (!(await bolehKelolaMemoriGrup(sock, from, senderId, isOwner))) {
