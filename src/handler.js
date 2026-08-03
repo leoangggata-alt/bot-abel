@@ -115,16 +115,13 @@ export function isOwnerIdentityQuestion(text = "") {
 }
 
 async function kirimIdentitasPencipta(sock, to, mentions = []) {
-  const ownerName = process.env.OWNER_NAME || "ABEL-LAB";
-  const contact = nomorDariJid(OWNER);
   const caption = [
-    "👑 *PENCIPTA ABEL & ARKA*",
+    "👑 *OWNER & PENCIPTA ABEL–ARKA*",
     "",
-    "Kedua bot ini diciptakan dan dikembangkan oleh *ABEL-LAB*.",
-    `Nama owner: *${ownerName}*`,
-    contact ? `Kontak resmi: https://wa.me/${contact}` : "",
+    "Identitas publik: *ABEL-LAB*",
+    "Peran: owner, pencipta, dan developer Abel serta Arka.",
     "",
-    "Foto ini adalah foto pencipta yang ditetapkan oleh owner.",
+    "_Data pribadi owner tidak ditampilkan._",
   ].filter(Boolean).join("\n");
   if (fs.existsSync(CREATOR_PHOTO_FILE)) {
     await sock.sendMessage(to, {
@@ -136,6 +133,15 @@ async function kirimIdentitasPencipta(sock, to, mentions = []) {
     return;
   }
   await kirim(sock, to, caption, mentions);
+}
+
+export function isCreatorOrOwnerQuestion(text = "") {
+  if (isCreatorQuestion(text)) return true;
+  const value = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const asksWho = /\b(?:siapa|sapa)\b/.test(value);
+  const ownerWords = /\b(?:owner|orner|bos|pemilik)\b/.test(value);
+  const botWords = /\b(?:kamu|mu|abel|arka|bot)\b/.test(value);
+  return asksWho && ownerWords && botWords;
 }
 
 export function isPermintaanPromptAffiliate(teks = "") {
@@ -447,7 +453,7 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
       });
     }
 
-    if (isCreatorQuestion(trimTeks)) {
+    if (isCreatorOrOwnerQuestion(trimTeks)) {
       await kirimIdentitasPencipta(sock, from, isGrup ? [senderId] : []);
       return;
     }

@@ -46,6 +46,7 @@ import {
   downloadGambarWhatsApp,
   isVerifiedOwnerSender,
   isOwnerIdentityQuestion,
+  isCreatorOrOwnerQuestion,
   bolehKelolaMemoriGrup,
   gabungkanKonteksKutipan,
   handleMessage,
@@ -112,6 +113,10 @@ test("kontak owner dikenali dari nomor WhatsApp dan pertanyaan pencipta mengirim
   assert.equal(sent.length, 1);
   assert.ok(Buffer.isBuffer(sent[0].content.image));
   assert.match(sent[0].content.caption, /ABEL-LAB/);
+  assert.doesNotMatch(sent[0].content.caption, /wa\.me|6285185741830|Nama owner/i);
+  assert.equal(isCreatorOrOwnerQuestion("siapa owner Abel?"), true);
+  assert.equal(isCreatorOrOwnerQuestion("siapa bos kamu?"), true);
+  assert.equal(isCreatorOrOwnerQuestion("siapa yang membuat Arka?"), true);
   assert.equal(isOwnerIdentityQuestion("!abel aku ini siapa?"), true);
   assert.equal(isOwnerIdentityQuestion("!arka kamu masih kenal aku?"), true);
   assert.equal(isOwnerIdentityQuestion("siapa bosmu?"), true);
