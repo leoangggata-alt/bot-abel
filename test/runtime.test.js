@@ -12,6 +12,7 @@ import {
   detectAIMode,
   extractActiveRequest,
   isCreatorQuestion,
+  isTikTokSalesQuestion,
   isUsableAIResponse,
   needsCatalogContext,
   needsStoreActivityContext,
@@ -444,6 +445,8 @@ test("katalog hanya dimuat saat pertanyaan benar-benar membutuhkan produk", () =
 test("pertanyaan penjualan hari ini memakai ringkasan transaksi nyata", () => {
   assert.equal(needsStoreActivityContext("jualan hari ini rame kah?"), true);
   assert.equal(needsStoreActivityContext("buat caption jualan"), false);
+  assert.equal(needsStoreActivityContext("jualan saya di TikTok hari ini sepi, harus bagaimana?"), false);
+  assert.equal(needsStoreActivityContext("berapa pesanan toko ABEL-LAB hari ini?"), true);
   const summary = summarizeStoreActivity([
     { waktu: "02/08/2026, 10.15.00", status: "Selesai", total: 50000 },
     { waktu: "02/08/2026, 11.00.00", status: "Menunggu Verifikasi", total: 45000 },
@@ -454,6 +457,22 @@ test("pertanyaan penjualan hari ini memakai ringkasan transaksi nyata", () => {
   assert.match(summary, /Menunggu Verifikasi: 1/);
   assert.doesNotMatch(summary, /Rp|pendapatan:|50\.000/i);
   assert.doesNotMatch(summary, /senderNum|nomor|pelanggan/i);
+});
+
+test("konsultasi TikTok tidak memakai katalog atau dashboard bot", () => {
+  const question = "Kenapa jualan saya di TikTok sepi dan bagaimana biar laku?";
+  assert.equal(isTikTokSalesQuestion(question), true);
+  assert.equal(needsStoreActivityContext(question), false);
+  assert.equal(needsCatalogContext("bagaimana menentukan harga jualan saya di TikTok?"), false);
+  assert.equal(needsCatalogContext("cara jual produk P001 di TikTok"), true);
+
+  const prompt = buildSystemPrompt({
+    includeCatalog: false,
+    tiktokSalesMode: true,
+  });
+  assert.match(prompt, /MODE KONSULTASI JUALAN TIKTOK AKTIF/);
+  assert.match(prompt, /bukan permintaan statistik toko ABEL-LAB/i);
+  assert.match(prompt, /Jangan menyebut jumlah pesanan.*data dashboard bot/i);
 });
 
 test("pertanyaan aktivitas toko dijawab lokal tanpa halusinasi provider", async () => {
