@@ -25,7 +25,7 @@ export const DEFAULT_AI_SETTINGS = Object.freeze({
   customInstruction: "",
   textModels: {
     openai: process.env.OPENAI_TEXT_MODEL || "gpt-5.6-sol",
-    gemini: process.env.GEMINI_TEXT_MODEL || "gemini-3.6-flash",
+    gemini: process.env.GEMINI_TEXT_MODEL || "gemini-3.5-flash",
     groq: process.env.GROQ_TEXT_MODEL || "llama-3.3-70b-versatile",
     xai: process.env.XAI_TEXT_MODEL || "grok-4.3",
   },

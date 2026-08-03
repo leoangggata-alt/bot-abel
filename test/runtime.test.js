@@ -17,6 +17,7 @@ import {
   needsCatalogContext,
   needsStoreActivityContext,
   summarizeStoreActivity,
+  shouldFastFailProvider,
   normalizeVisionInput,
 } from "../src/ai.js";
 import { DEFAULT_AI_SETTINGS, normalizeAISettings } from "../src/ai-settings.js";
@@ -432,6 +433,16 @@ test("mode AI otomatis mengenali vision, jualan, humor, kreatif, dan fakta", () 
   assert.equal(detectAIMode("buat lelucon lucu"), "humor");
   assert.equal(detectAIMode("tulis cerita pendek"), "creative");
   assert.equal(detectAIMode("jelaskan mengapa langit biru"), "factual");
+});
+
+test("timeout provider memicu failover cepat ke otak cadangan", () => {
+  assert.equal(shouldFastFailProvider(new Error("Provider timeout")), true);
+  assert.equal(shouldFastFailProvider(new Error("model currently experiencing high demand")), true);
+  assert.equal(shouldFastFailProvider(new Error("quota exceeded")), false);
+});
+
+test("model chat Gemini memakai varian cepat yang sudah terverifikasi", () => {
+  assert.equal(DEFAULT_AI_SETTINGS.textModels.gemini, "gemini-3.5-flash");
 });
 
 test("katalog hanya dimuat saat pertanyaan benar-benar membutuhkan produk", () => {

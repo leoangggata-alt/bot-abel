@@ -283,12 +283,9 @@ function candidatesForAttempt(provider) {
   if (!candidates.length) {
     throw new Error(`${provider}: semua slot API key sedang dalam jeda otomatis`);
   }
-  // Gemini adalah otak utama: coba seluruh slot aktif secara berurutan.
-  // Slot berikutnya baru dipakai ketika slot sebelumnya gagal/kena kuota,
-  // kemudian provider cadangan hanya dipanggil bila semua slot tak tersedia.
-  const maxAttempts = provider === "gemini"
-    ? candidates.length
-    : MAX_KEYS_PER_PROVIDER_ATTEMPT;
+  // Batasi slot per permintaan agar satu provider yang lambat tidak menahan
+  // balasan terlalu lama. Cursor membuat slot cadangan tetap bergiliran.
+  const maxAttempts = MAX_KEYS_PER_PROVIDER_ATTEMPT;
   if (candidates.length <= maxAttempts) return candidates;
   const start = candidateCursor.get(provider) || 0;
   const rotated = candidates.map((_, offset) => candidates[(start + offset) % candidates.length]);
@@ -308,6 +305,12 @@ function cooldownDuration(error) {
   if (/quota|rate.?limit|http 429/.test(message)) return 2 * 60 * 1000;
   if (/timeout|high demand|overloaded/.test(message)) return 45 * 1000;
   return 15 * 1000;
+}
+
+export function shouldFastFailProvider(error) {
+  return /timeout|high demand|overloaded|temporarily unavailable/i.test(
+    String(error?.message || error || ""),
+  );
 }
 
 function putCandidateOnCooldown(provider, candidate, error) {
@@ -549,9 +552,14 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
         {
           system_instruction: { parts: [{ text: buildSystemPrompt(settings) }] },
           contents,
-          generationConfig: { maxOutputTokens },
+          generationConfig: {
+            maxOutputTokens,
+            // Chat WhatsApp membutuhkan jawaban langsung. Budget 0 mencegah
+            // token habis di proses thinking lalu menghasilkan teks kosong.
+            thinkingConfig: { thinkingBudget: 0 },
+          },
         },
-        15000,
+        8000,
       );
       const text = (json.candidates?.[0]?.content?.parts || [])
         .map(part => part.text || "")
@@ -570,6 +578,9 @@ async function callGemini(messages, settings, image = null, maxOutputTokens = 12
     }
     putCandidateOnCooldown("gemini", candidate, lastError);
     console.warn(`[AI] Gemini slot ${index + 1} gagal: ${lastError.message}`);
+    // Timeout/high demand biasanya berdampak pada provider, bukan satu key.
+    // Segera pindah ke Groq/OpenAI agar pengguna tidak menunggu semua slot.
+    if (shouldFastFailProvider(lastError)) break;
   }
   throw lastError || new Error("Gemini gagal");
 }
