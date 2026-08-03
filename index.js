@@ -27,6 +27,7 @@ import {
   updateBotStatus,
 } from "./src/bot-profile-store.js";
 import { getHostMode } from "./src/host-mode-store.js";
+import { assessRuntimeHealth } from "./src/self-healing.js";
 
 dotenv.config();
 
@@ -44,6 +45,7 @@ let botControlTimer = null;
 let hostRoleTimer = null;
 let appliedHostRole = null;
 let hostRoleBusy = false;
+let selfHealingTimer = null;
 
 function isHostPrimary() {
   return getHostMode().role === "primary";
@@ -55,6 +57,10 @@ function createRuntime(profileId) {
     socket: null,
     reconnectTimer: null,
     reconnectAttempt: 0,
+    connected: false,
+    connectionStartedAt: 0,
+    lastRecoveryAt: 0,
+    pairingPending: false,
     pairingRequestedGeneration: -1,
     connecting: false,
     generation: 0,
@@ -146,6 +152,9 @@ async function restartBot(profileId) {
   runtime.reconnectAttempt = 0;
   runtime.pairingRequestedGeneration = -1;
   runtime.connecting = false;
+  runtime.connected = false;
+  runtime.connectionStartedAt = Date.now();
+  runtime.pairingPending = false;
   const oldSocket = runtime.socket;
   runtime.socket = null;
   if (profileId === "abel") {
@@ -236,6 +245,9 @@ async function connectBot(profileId) {
   if (!profile?.enabled || shuttingDown || runtime.connecting || !isHostPrimary()) return null;
 
   runtime.connecting = true;
+  runtime.connected = false;
+  runtime.connectionStartedAt = Date.now();
+  runtime.pairingPending = false;
   runtime.generation += 1;
   const generation = runtime.generation;
   updateBotStatus(profileId, {
@@ -273,6 +285,7 @@ async function connectBot(profileId) {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        runtime.pairingPending = true;
         if (profile.linkMethod === "code") {
           updateBotStatus(profileId, {
             state: "preparing_pairing",
@@ -306,6 +319,8 @@ async function connectBot(profileId) {
           : "unknown";
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut && isHostPrimary();
         runtime.socket = null;
+        runtime.connected = false;
+        runtime.pairingPending = false;
         if (profileId === "abel") {
           stopBroadcastServices();
           markGroupDirectoryDisconnected();
@@ -325,6 +340,9 @@ async function connectBot(profileId) {
 
       if (connection === "open") {
         runtime.reconnectAttempt = 0;
+        runtime.connected = true;
+        runtime.connectionStartedAt = 0;
+        runtime.pairingPending = false;
         const number = sock.user?.id?.split(":")[0] || "";
         updateBotStatus(profileId, {
           state: "connected",
@@ -473,6 +491,38 @@ async function startRuntimeServices() {
     applyHostRole().catch(error => console.error(`[HOST] Gagal menerapkan mode: ${error.message}`));
   }, 2000);
   hostRoleTimer.unref?.();
+  selfHealingTimer = setInterval(() => {
+    if (shuttingDown) return;
+    const profiles = getBotProfiles();
+    const now = Date.now();
+    for (const profile of Object.values(profiles)) {
+      const runtime = getRuntime(profile.id);
+      const diagnosis = assessRuntimeHealth({
+        hostPrimary: isHostPrimary(),
+        enabled: profile.enabled,
+        connected: runtime.connected,
+        connecting: runtime.connecting,
+        pairingPending: runtime.pairingPending,
+        socketPresent: Boolean(runtime.socket),
+        reconnectScheduled: Boolean(runtime.reconnectTimer),
+        connectionStartedAt: runtime.connectionStartedAt,
+        lastRecoveryAt: runtime.lastRecoveryAt,
+      }, now);
+      if (diagnosis.action === "none") continue;
+
+      runtime.lastRecoveryAt = now;
+      console.warn(`[SELF-HEAL:${profile.name}] ${diagnosis.reason} → ${diagnosis.action}`);
+      if (diagnosis.action === "reconnect") {
+        scheduleReconnect(runtime);
+      } else if (diagnosis.action === "restart") {
+        restartBot(profile.id).catch(error => {
+          console.error(`[SELF-HEAL:${profile.name}] Pemulihan gagal: ${error.message}`);
+          scheduleReconnect(runtime);
+        });
+      }
+    }
+  }, 30_000);
+  selfHealingTimer.unref?.();
 }
 
 async function shutdown(signal) {
@@ -483,6 +533,8 @@ async function shutdown(signal) {
   botControlTimer = null;
   if (hostRoleTimer) clearInterval(hostRoleTimer);
   hostRoleTimer = null;
+  if (selfHealingTimer) clearInterval(selfHealingTimer);
+  selfHealingTimer = null;
   markGroupDirectoryDisconnected();
   for (const runtime of runtimes.values()) {
     if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
@@ -505,6 +557,15 @@ async function shutdown(signal) {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("uncaughtException", error => {
+  console.error(`[SELF-HEAL:PROCESS] Fatal error: ${error?.stack || error}`);
+  // Keluar dengan kode gagal agar PM2 memulai proses bersih dari awal.
+  setTimeout(() => process.exit(1), 100).unref();
+});
+process.on("unhandledRejection", error => {
+  console.error(`[SELF-HEAL:PROCESS] Promise gagal: ${error?.stack || error}`);
+  setTimeout(() => process.exit(1), 100).unref();
+});
 
 startRuntimeServices().catch(error => {
   console.error("Gagal memulai bot:", error.message);

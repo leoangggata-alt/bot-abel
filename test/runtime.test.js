@@ -56,6 +56,7 @@ import {
 import { hitungTotalOrder, kirimQRIS } from "../src/order.js";
 import { createGroupMemoryStore } from "../src/group-memory-store.js";
 import { createProductStore, validateProducts } from "../src/product-store.js";
+import { assessRuntimeHealth } from "../src/self-healing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -126,6 +127,34 @@ test("mode host hanya menerima primary atau standby", () => {
   assert.equal(normalizeHostRole("PRIMARY"), "primary");
   assert.equal(normalizeHostRole("standby"), "standby");
   assert.equal(normalizeHostRole("tidak-valid", "standby"), "standby");
+});
+
+test("watchdog self-healing hanya memulihkan runtime yang benar-benar macet", () => {
+  const now = 1_000_000;
+  assert.equal(assessRuntimeHealth({ hostPrimary: false, enabled: true }, now).action, "none");
+  assert.equal(assessRuntimeHealth({ hostPrimary: true, enabled: true, connected: true }, now).action, "none");
+  assert.equal(assessRuntimeHealth({
+    hostPrimary: true,
+    enabled: true,
+    connected: false,
+    socketPresent: false,
+    reconnectScheduled: false,
+  }, now).action, "reconnect");
+  assert.equal(assessRuntimeHealth({
+    hostPrimary: true,
+    enabled: true,
+    connected: false,
+    socketPresent: true,
+    connectionStartedAt: now - 100_000,
+  }, now).action, "restart");
+  assert.equal(assessRuntimeHealth({
+    hostPrimary: true,
+    enabled: true,
+    connected: false,
+    socketPresent: true,
+    pairingPending: true,
+    connectionStartedAt: now - 100_000,
+  }, now).action, "none");
 });
 
 test("bahasa perintah natural tetap dikenali untuk konteks AI", () => {
