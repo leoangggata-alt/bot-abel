@@ -348,6 +348,7 @@ export async function handleMessage(sock, msg, botProfile = DEFAULT_BOT_PROFILE)
       : prompt, {
       ...options,
       profile,
+      verifiedOwner: isOwner,
       memoryTurns: isGrup ? 4 : options.memoryTurns,
     });
 
@@ -530,6 +531,7 @@ async function handleCommand(sock, from, senderId, senderNum, isGrup, isOwner, t
     : prompt, {
     ...options,
     profile: botProfile,
+    verifiedOwner: isOwner,
     memoryTurns: isGrup ? 4 : options.memoryTurns,
   });
 

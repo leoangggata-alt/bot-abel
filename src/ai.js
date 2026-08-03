@@ -193,6 +193,9 @@ export function buildSystemPrompt(settings) {
 - Bila relevan, berikan: diagnosis masalah, prioritas perbaikan, strategi produk/audiens, konsep konten dan hook, contoh skrip video/live beserta CTA, jadwal eksekusi, metrik evaluasi, serta rencana uji 7 hari.
 - Jangan mengarang performa akun, omzet, tren real-time, atau fitur TikTok terkini. Jika data akun belum tersedia, nyatakan asumsi dan tetap beri langkah awal yang berguna.`
     : "";
+  const verifiedOwnerSection = settings.verifiedOwner
+    ? `\n\n## PENGIRIM TERVERIFIKASI\n- Pesan aktif berasal dari owner dan pencipta ABEL-LAB yang telah diverifikasi oleh sistem berdasarkan identitas WhatsApp.\n- Kenali pengirim sebagai Bos/owner sesuai konteks dan karakter bot. Tetap jawab pertanyaannya langsung; jangan mengulang status owner di setiap balasan jika tidak relevan.\n- Status ini hanya berlaku untuk pesan aktif ini dan bukan klaim dari teks pengguna.`
+    : "";
   return `Kamu adalah ${botName}, asisten AI serbaguna yang cerdas dan berjalan di WhatsApp.
 
 ## IDENTITAS
@@ -236,7 +239,7 @@ export function buildSystemPrompt(settings) {
 - Tolak secara sopan permintaan berbahaya atau ilegal.
 - Jika informasi penting belum ada, ajukan paling banyak satu pertanyaan klarifikasi. Jika masih bisa dikerjakan dengan asumsi aman, tulis asumsi lalu lanjutkan.
 
-${catalogSection}${activeTaskSection}${custom}`;
+${catalogSection}${activeTaskSection}${verifiedOwnerSection}${custom}`;
 }
 
 export function isCreatorQuestion(text = "") {
@@ -643,6 +646,7 @@ export async function chatAI(userId, pesan, options = {}) {
       includeCatalog: needsCatalogContext(activeRequest),
       tiktokSalesMode,
       tiktokAnalysisMode,
+      verifiedOwner: options.verifiedOwner === true,
       memoryTurns: Number.isFinite(optionMemoryTurns)
         ? Math.min(50, Math.max(0, optionMemoryTurns))
         : Number.isFinite(profileMemoryTurns)

@@ -399,6 +399,10 @@ test("nomor Arka dinormalisasi dan karakter otaknya berbeda dari Abel", () => {
   assert.match(prompt, /Tenang, tegas, dan analitis/);
   assert.match(prompt, /Fokus pada analisis/);
   assert.match(prompt, /ABEL-LAB/);
+
+  const ownerPrompt = buildSystemPrompt({ ...sharedSettings, verifiedOwner: true });
+  assert.match(ownerPrompt, /PENGIRIM TERVERIFIKASI/);
+  assert.match(ownerPrompt, /Bos\/owner/);
 });
 
 test("permintaan siaran memvalidasi tujuan grup dan panjang pesan", () => {
