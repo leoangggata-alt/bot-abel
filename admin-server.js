@@ -255,6 +255,103 @@ app.post("/api/settings", (req, res) => {
   res.json({ success: true });
 });
 
+// ── API Vercel AI Gateway ─────────────────────────────────────
+const VERCEL_CFG_FILE = path.join(__dirname, "data", "vercel-ai.json");
+
+function readVercelCfg() {
+  if (!fs.existsSync(VERCEL_CFG_FILE)) {
+    return {
+      apiKey : process.env.VERCEL_AI_KEY  || "",
+      apiUrl : process.env.VERCEL_AI_URL  || "https://api.v0.dev/v1",
+      model  : process.env.VERCEL_AI_MODEL || "black-forest-labs/flux-1-schnell",
+      aktif  : Boolean(process.env.VERCEL_AI_KEY),
+    };
+  }
+  try { return JSON.parse(fs.readFileSync(VERCEL_CFG_FILE, "utf-8")); }
+  catch { return {}; }
+}
+function saveVercelCfg(data) {
+  fs.mkdirSync(path.dirname(VERCEL_CFG_FILE), { recursive: true });
+  fs.writeFileSync(VERCEL_CFG_FILE, JSON.stringify(data, null, 2));
+}
+
+// GET config Vercel AI (sembunyikan key kecuali reveal=true)
+app.get("/api/vercel-ai", (req, res) => {
+  const cfg = readVercelCfg();
+  const reveal = req.query.reveal === "true";
+  res.json({
+    apiKey : reveal ? cfg.apiKey : (cfg.apiKey ? "***tersembunyi***" : ""),
+    apiUrl : cfg.apiUrl,
+    model  : cfg.model,
+    aktif  : cfg.aktif,
+    hasKey : Boolean(cfg.apiKey),
+  });
+});
+
+// PUT update config Vercel AI
+app.put("/api/vercel-ai", (req, res) => {
+  const cfg = readVercelCfg();
+  const updated = {
+    apiKey : req.body.apiKey !== undefined ? req.body.apiKey : cfg.apiKey,
+    apiUrl : req.body.apiUrl || cfg.apiUrl || "https://api.v0.dev/v1",
+    model  : req.body.model  || cfg.model  || "black-forest-labs/flux-1-schnell",
+    aktif  : req.body.aktif  !== undefined ? req.body.aktif  : cfg.aktif,
+  };
+  saveVercelCfg(updated);
+  // Update env runtime
+  process.env.VERCEL_AI_KEY   = updated.apiKey;
+  process.env.VERCEL_AI_URL   = updated.apiUrl;
+  process.env.VERCEL_AI_MODEL = updated.model;
+  res.json({ success: true, hasKey: Boolean(updated.apiKey) });
+});
+
+// POST test koneksi Vercel AI
+app.post("/api/vercel-ai/test", async (req, res) => {
+  const cfg = readVercelCfg();
+  if (!cfg.apiKey) {
+    return res.status(400).json({ success: false, error: "API Key belum diisi!" });
+  }
+  try {
+    const https = await import("https");
+    const body  = JSON.stringify({
+      model : cfg.model,
+      prompt: "a white cat",
+      n: 1, size: "256x256",
+    });
+    const result = await new Promise((resolve, reject) => {
+      const urlObj = new URL(`${cfg.apiUrl}/images/generations`);
+      const req2 = https.default.request({
+        hostname: urlObj.hostname,
+        path    : urlObj.pathname,
+        method  : "POST",
+        headers : {
+          "Content-Type" : "application/json",
+          "Authorization": `Bearer ${cfg.apiKey}`,
+          "Content-Length": Buffer.byteLength(body),
+        },
+        timeout: 15000,
+      }, (r) => {
+        let d = "";
+        r.on("data", c => d += c);
+        r.on("end", () => resolve({ status: r.statusCode, body: d }));
+      });
+      req2.on("error", reject);
+      req2.on("timeout", () => { req2.destroy(); reject(new Error("Timeout")); });
+      req2.write(body);
+      req2.end();
+    });
+    const json = JSON.parse(result.body);
+    if (result.status === 200 && json.data) {
+      res.json({ success: true, message: "✅ Koneksi berhasil! Vercel AI Gateway aktif." });
+    } else {
+      res.json({ success: false, error: json.error?.message || result.body.slice(0, 200) });
+    }
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+
 // ── API Key Pool ─────────────────────────────────────────────
 app.get("/api/api-keys", (req, res) => {
   // Key lengkap hanya boleh keluar saat panel benar-benar dilindungi password.

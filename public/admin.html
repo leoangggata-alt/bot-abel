@@ -485,6 +485,9 @@
       <div class="nav-item" onclick="showPage('settings')" id="nav-settings" data-nav-page="settings">
         <span class="icon">⚙️</span> Pengaturan Bot
       </div>
+      <div class="nav-item" onclick="showPage('vercel-ai')" id="nav-vercel-ai" data-nav-page="vercel-ai">
+        <span class="icon">🖼️</span> Vercel AI Gambar
+      </div>
       <div class="nav-item" onclick="showPage('api-keys')" id="nav-api-keys" data-nav-page="api-keys">
         <span class="icon">🔐</span> API Keys
       </div>
@@ -778,6 +781,97 @@
             </div>
           </div>
           <button class="btn btn-primary" onclick="saveSettings()">💾 Simpan Pengaturan</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VERCEL AI GATEWAY SETTINGS -->
+    <div class="page" id="page-vercel-ai">
+      <div class="page-header">
+        <div class="page-title">🖼️ Vercel AI Gateway</div>
+        <div class="page-sub">Konfigurasi API key untuk pembuatan gambar AI premium</div>
+      </div>
+
+      <!-- Status Card -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <div class="card-title">Status Koneksi</div>
+          <div id="vercel-status-badge" class="badge badge-inactive">Belum dikonfigurasi</div>
+        </div>
+        <div style="padding:0 20px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted)">Provider</div>
+              <div style="font-weight:600">Vercel AI Gateway</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted)">Cara dapat key</div>
+              <a href="https://vercel.com/account/tokens" target="_blank" style="color:var(--accent);font-size:13px">vercel.com/account/tokens →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config Card -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">⚙️ Konfigurasi API</div></div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group full">
+              <label>🔑 API Key <span style="color:var(--danger)">*</span></label>
+              <div style="display:flex;gap:8px">
+                <input type="password" id="vai-key" placeholder="Masukkan Vercel AI API Key..." style="flex:1"/>
+                <button class="btn btn-sm" onclick="toggleVaiKey()" style="background:var(--surface2);border:1px solid var(--border);white-space:nowrap">👁 Lihat</button>
+              </div>
+              <small style="color:var(--text-muted)">Dapatkan di: vercel.com/account/tokens → Create Token</small>
+            </div>
+            <div class="form-group">
+              <label>🌐 API URL</label>
+              <input type="text" id="vai-url" value="https://api.v0.dev/v1" placeholder="https://api.v0.dev/v1"/>
+            </div>
+            <div class="form-group">
+              <label>🤖 Model Gambar</label>
+              <select id="vai-model">
+                <option value="black-forest-labs/flux-1-schnell">flux-1-schnell (Cepat)</option>
+                <option value="black-forest-labs/flux-1-dev">flux-1-dev (Kualitas tinggi)</option>
+                <option value="black-forest-labs/flux-1.1-pro">flux-1.1-pro (Ultra HD)</option>
+                <option value="stability-ai/stable-diffusion-xl-base-1.0">Stable Diffusion XL</option>
+              </select>
+            </div>
+            <div class="form-group full" style="display:flex;gap:10px;align-items:center;padding-top:8px">
+              <label style="margin:0;cursor:pointer;display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="vai-aktif" style="width:16px;height:16px"/>
+                Aktifkan Vercel AI Gateway
+              </label>
+              <span style="color:var(--text-muted);font-size:12px">(jika nonaktif, pakai Pollinations gratis)</span>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="saveVercelAI()">💾 Simpan</button>
+            <button class="btn" onclick="testVercelAI()" style="background:var(--success);color:white">🧪 Test Koneksi</button>
+            <button class="btn" onclick="loadVercelAI(true)" style="background:var(--surface2);border:1px solid var(--border)">🔄 Reload</button>
+          </div>
+
+          <div id="vai-test-result" style="display:none;margin-top:16px;padding:12px;border-radius:8px;font-size:13px"></div>
+        </div>
+      </div>
+
+      <!-- Info Card -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-header"><div class="card-title">ℹ️ Panduan Mendapatkan API Key</div></div>
+        <div style="padding:0 20px 20px;line-height:1.8">
+          <ol style="color:var(--text-muted);font-size:13px;padding-left:20px">
+            <li>Buka <a href="https://vercel.com/account/tokens" target="_blank" style="color:var(--accent)">vercel.com/account/tokens</a></li>
+            <li>Klik <strong style="color:var(--text)">Create Token</strong></li>
+            <li>Beri nama: <code style="background:var(--surface2);padding:2px 6px;border-radius:4px">bot-abel-image</code></li>
+            <li>Copy token yang muncul</li>
+            <li>Tempel di field API Key di atas</li>
+            <li>Klik <strong style="color:var(--text)">Test Koneksi</strong> untuk verifikasi</li>
+          </ol>
+          <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:12px;color:var(--text-muted)">
+            💡 <strong>Gratis tanpa key:</strong> Bot tetap bisa generate gambar menggunakan <strong>Pollinations AI</strong> (gratis, tanpa API key). Vercel AI memberikan kualitas lebih tinggi dan model premium.
+          </div>
         </div>
       </div>
     </div>
@@ -1947,7 +2041,82 @@
     if (e.key === 'Escape') closeModal();
   });
 
+  // ── Vercel AI Gateway ─────────────────────────────────────
+  async function loadVercelAI(revealKey = false) {
+    try {
+      const r = await fetch(`/api/vercel-ai${revealKey ? '?reveal=true' : ''}`).then(r=>r.json());
+      document.getElementById('vai-key').value   = r.apiKey || '';
+      document.getElementById('vai-url').value   = r.apiUrl || 'https://api.v0.dev/v1';
+      document.getElementById('vai-model').value = r.model  || 'black-forest-labs/flux-1-schnell';
+      document.getElementById('vai-aktif').checked = r.aktif || false;
+
+      const badge = document.getElementById('vercel-status-badge');
+      if (r.hasKey && r.aktif) {
+        badge.textContent = '✅ Aktif';
+        badge.className = 'badge badge-active';
+      } else if (r.hasKey) {
+        badge.textContent = '⚠️ Key ada, tapi nonaktif';
+        badge.className = 'badge badge-warning';
+      } else {
+        badge.textContent = '❌ Belum dikonfigurasi';
+        badge.className = 'badge badge-inactive';
+      }
+    } catch(e) { console.error('loadVercelAI error', e); }
+  }
+
+  async function saveVercelAI() {
+    const key   = document.getElementById('vai-key').value.trim();
+    const url   = document.getElementById('vai-url').value.trim();
+    const model = document.getElementById('vai-model').value;
+    const aktif = document.getElementById('vai-aktif').checked;
+
+    const r = await fetch('/api/vercel-ai', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ apiKey: key, apiUrl: url, model, aktif })
+    }).then(r=>r.json());
+
+    if (r.success) {
+      showToast('✅ Konfigurasi Vercel AI disimpan!');
+      await loadVercelAI();
+    } else {
+      showToast('❌ Gagal menyimpan: ' + (r.error||''), 'error');
+    }
+  }
+
+  async function testVercelAI() {
+    const resultEl = document.getElementById('vai-test-result');
+    resultEl.style.display = 'block';
+    resultEl.style.background = 'rgba(245,158,11,0.15)';
+    resultEl.style.border = '1px solid rgba(245,158,11,0.3)';
+    resultEl.textContent = '⏳ Menguji koneksi ke Vercel AI Gateway...';
+
+    try {
+      const r = await fetch('/api/vercel-ai/test', { method: 'POST' }).then(r=>r.json());
+      if (r.success) {
+        resultEl.style.background = 'rgba(16,185,129,0.15)';
+        resultEl.style.border = '1px solid rgba(16,185,129,0.3)';
+        resultEl.textContent = r.message || '✅ Koneksi berhasil!';
+        showToast('✅ Vercel AI Gateway aktif!');
+      } else {
+        resultEl.style.background = 'rgba(239,68,68,0.15)';
+        resultEl.style.border = '1px solid rgba(239,68,68,0.3)';
+        resultEl.textContent = '❌ Gagal: ' + (r.error || 'Unknown error');
+      }
+    } catch(e) {
+      resultEl.style.background = 'rgba(239,68,68,0.15)';
+      resultEl.style.border = '1px solid rgba(239,68,68,0.3)';
+      resultEl.textContent = '❌ Error: ' + e.message;
+    }
+  }
+
+  function toggleVaiKey() {
+    const inp = document.getElementById('vai-key');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+
   init();
+  loadVercelAI();
 </script>
 </body>
 </html>
